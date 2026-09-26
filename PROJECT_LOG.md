@@ -98,6 +98,92 @@ Recorded on **2026-09-25**:
 
 ## Change Log
 
+### 2026-09-26 — Safe ESP32 firmware base implemented
+
+**Changes**
+
+- Added the Arduino firmware entry point with dual VL53L0X XSHUT/address initialization, filtered claw state, timestamp-based session timing, SG90 hooks, safe startup behavior, Wi-Fi access-point mode, HTTP API routes, and LittleFS website serving.
+- Added `HardwareConfig.h`; servo output defaults to disabled until physical calibration is complete.
+- Added build-time synchronization of browser assets into the firmware filesystem image.
+- Added 10/20/30-second website demo buttons and sensor-readiness handling.
+- Added `HARDWARE_TRAINING.md` with wiring, sensor threshold training, safe servo calibration, filesystem upload, and full-flow validation instructions.
+- Pinned PlatformIO Espressif32 to `6.12.0` because the initially resolved `7.1.3` Arduino package lacked its required board variants.
+- Removed deferred RFID and teammate-owned TM1637 libraries from the base dependency list; each feature can add its exact library when integrated.
+
+**Verification**
+
+- PlatformIO firmware build passes for `esp32doit-devkit-v1` using Arduino.
+- Firmware uses 45,736 bytes RAM (14.0%) and 854,085 bytes flash (65.2%).
+- LittleFS image builds successfully with the complete website module tree.
+- Hardware upload and physical behavior remain untested until the board and safely powered components are connected.
+
+### 2026-09-26 — Claw sensing and power plan corrected
+
+**New clarifications**
+
+- There is no phone sensor inside the box.
+- Both VL53L0X sensors are mounted at the crab claws and measure claw position. When the pencil is lifted and the claws rise, active study timing begins; returning the pencil/claws pauses it.
+- Starting a session no longer requires a `phonePresent` reading. Pressing Start commands the lock and begins the session in studying or paused state based on claw position.
+- The TM1637 forms the crab eyes. A teammate owns its implementation and will push it separately; preserve GPIO14/GPIO13 and integrate rather than overwrite their work.
+- Two SG90 servos are available, but the second servo shell dispenser remains a later phase.
+- The photographed breadboard supply is an ELEGOO Power MB V2 intended to receive the available 9 V battery through its barrel input.
+
+**Power decision**
+
+- Do not rely on a rectangular 9 V battery for SG90 servo power. Use ESP32 USB power during development and a separate regulated 5 V servo supply with common ground. The 9 V/breadboard module may be used only for low-current experiments after verifying jumper voltages and polarity.
+
+**Tooling**
+
+- Installed the official PlatformIO IDE VS Code extension v3.3.4 and its Microsoft C++ tools dependency.
+
+**Files changed**
+
+- Renamed the two VL53L0X definitions in `PinConfig.h` to left/right claw sensors.
+- Removed the website's `phonePresent` requirement for enabling Start.
+- Updated `README.md` and `PROJECT_LOG.md`.
+
+### 2026-09-26 — Two-sensor demo architecture finalized
+
+**Hardware evidence and decisions**
+
+- Photos confirm a classic 30-pin ESP32/ESP-WROOM-32 DevKit-style board compatible with the selected PlatformIO target. The photographed connector appears to be Micro-USB rather than USB-C; this does not change firmware targeting.
+- Reallocated the two available VL53L0X sensors: one detects the pencil and one detects the phone. This supersedes the earlier two-sided pencil detection and proposed third sensor.
+- Pencil presence will rely on careful placement and debounce/filtering from one distance sensor.
+- Two SG90 servos are available. SG90 #1 is the phone lock on GPIO26. SG90 #2 and GPIO25 are reserved for a future shell dispenser; dispenser behavior is deferred.
+- When the dispenser phase is implemented, the simplest RFID policy is selected: any readable tag may claim one shell only after a completed session, and the reward is marked claimed to prevent repeats.
+- RFID never overrides an active session or unlocks the phone.
+- No buzzer is included.
+- The demo access point will be open and named `Focus-Lock`; a password can be added later if interference or unauthorized control becomes a concern.
+- The website may accept flexible durations. The four-digit display uses `MM:SS` under 100 minutes and may use `HH:MM` for longer goals; quick 10/20/30-second modes support demonstrations.
+- On session start, timing begins immediately if the pencil is already picked up.
+- Loss of phone detection during an active session does not stop or unlock it.
+- Startup behavior remains fail-safe unlock.
+- Exact lock/unlock and future dispense angles require physical calibration.
+
+**Files changed**
+
+- Updated `firmware/include/PinConfig.h` to use two sensors at addresses `0x30` and `0x31`, freeing GPIO16.
+- Updated `README.md` and `PROJECT_LOG.md` with the finalized demo architecture.
+
+### 2026-09-26 — PlatformIO target selected
+
+**Confirmed build environment**
+
+- PlatformIO project environment: `esp32doit-devkit-v1`.
+- Framework: Arduino.
+- Target: classic 30-pin ESP32/ESP-WROOM-32 DevKit V1 with 3.3 V GPIO logic.
+- Firmware source is isolated under `firmware/` so it does not conflict with the existing browser JavaScript under `src/`.
+- LittleFS is selected for eventually serving the website directly from the ESP32 access point.
+
+**Changes**
+
+- Added `platformio.ini` with the selected board/framework and planned hardware libraries.
+- Added `firmware/include/PinConfig.h` with confirmed pins, proposed third VL53L0X XSHUT on GPIO16, runtime I2C addresses, and GPIO25 reserved for the unselected dispenser actuator.
+
+**Tooling note**
+
+- PlatformIO CLI is not currently installed or available on this machine's PATH, so firmware compilation cannot yet be verified locally.
+
 ### 2026-09-26 — Hardware behavior decisions clarified
 
 **Confirmed decisions**

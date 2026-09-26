@@ -4,6 +4,7 @@
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#15231b"><title>Focus Lock</title>
   <link rel="stylesheet" href="./src/styles.css">
+  <link rel="stylesheet" href="./src/demo-controls.css">
 </head>
 <body>
   <div class="sky" aria-hidden="true"><span class="sun"></span><span class="cloud cloud-one"></span><span class="cloud cloud-two"></span></div>
@@ -19,6 +20,7 @@
       <form id="start-form">
         <label for="duration">Study goal</label>
         <div class="controls"><div class="input-wrap"><input id="duration" type="number" min="1" max="480" value="25" required><span>minutes</span></div><button id="start" type="submit" disabled>Start</button></div>
+        <div class="quick-demo"><span>Quick demo:</span><button type="button" data-demo-seconds="10">10 sec</button><button type="button" data-demo-seconds="20">20 sec</button><button type="button" data-demo-seconds="30">30 sec</button></div>
       </form>
       <p id="message" class="message" role="status" aria-live="polite"></p>
 

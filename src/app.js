@@ -11,6 +11,7 @@ const elements = {
   musicToggle: document.querySelector("#music-toggle"), volume: document.querySelector("#volume"),
   audio: document.querySelector("#audio"), trackName: document.querySelector("#track-name")
 };
+elements.quickDemo = [...document.querySelectorAll("[data-demo-seconds]")];
 let connected = false;
 let requestPending = false;
 let musicUrl = null;
@@ -29,7 +30,10 @@ function setConnection(value) {
   elements.connection.classList.toggle("offline", !value);
   elements.connection.classList.toggle("online", value);
   elements.connection.lastChild.textContent = value ? " Connected" : " Offline";
-  if (!value) elements.start.disabled = true;
+  if (!value) {
+    elements.start.disabled = true;
+    elements.quickDemo.forEach((button) => { button.disabled = true; });
+  }
 }
 
 function render(data) {
@@ -42,8 +46,11 @@ function render(data) {
   elements.fill.style.width = `${percent}%`;
   elements.progress.setAttribute("aria-valuenow", String(Math.round(percent)));
   elements.duration.disabled = Boolean(data.sessionActive);
-  elements.start.disabled = requestPending || !connected || Boolean(data.sessionActive) || data.phonePresent === false;
+  const controlsDisabled = requestPending || !connected || Boolean(data.sessionActive) || data.sensorsReady === false;
+  elements.start.disabled = controlsDisabled;
+  elements.quickDemo.forEach((button) => { button.disabled = controlsDisabled; });
   elements.start.textContent = data.sessionActive ? "In progress" : "Start";
+  if (data.sensorsReady === false) elements.status.textContent = "Claw sensors need setup";
 }
 
 async function refresh() {
@@ -58,16 +65,26 @@ async function refresh() {
   }
 }
 
+async function startSession(duration) {
+  if (requestPending) return;
+  requestPending = true; elements.start.disabled = true; elements.message.textContent = "Starting session…";
+  elements.quickDemo.forEach((button) => { button.disabled = true; });
+  try {
+    const status = await api.start(duration);
+    render(status);
+    elements.message.textContent = status.locked ? "Session started. Phone locked." : "Session started. Servo is in safe setup mode.";
+  } catch (error) { elements.message.textContent = error.message; }
+  finally { requestPending = false; await refresh(); }
+}
+
 elements.form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const duration = Number(elements.duration.value) * 60;
-  if (!Number.isFinite(duration) || duration <= 0) return;
-  requestPending = true; elements.start.disabled = true; elements.message.textContent = "Starting session…";
-  try {
-    render(await api.start(duration));
-    elements.message.textContent = "Session started. Phone locked.";
-  } catch (error) { elements.message.textContent = error.message; }
-  finally { requestPending = false; await refresh(); }
+  if (Number.isFinite(duration) && duration > 0) await startSession(duration);
+});
+
+elements.quickDemo.forEach((button) => {
+  button.addEventListener("click", () => startSession(Number(button.dataset.demoSeconds)));
 });
 
 elements.musicFile.addEventListener("change", () => {

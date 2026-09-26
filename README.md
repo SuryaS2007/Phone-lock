@@ -82,6 +82,45 @@ src/config.js                      Controller URL and polling interval
 src/styles.css                     Timer UI styling
 server.js                          Local static website server
 PROJECT_LOG.md                     Complete change and decision history
+HARDWARE_TRAINING.md               Wiring, calibration, and acceptance tests
+firmware/src/main.cpp              ESP32 firmware entry point
+firmware/include/HardwareConfig.h  Safe-mode and calibration values
+firmware/include/PinConfig.h       ESP32 pin allocation
 ```
 
 The earlier simulation core remains in `src/core` and `src/hardware` as reference and is covered by tests, but it is no longer loaded by the website.
+
+## Confirmed prototype hardware plan
+
+- PlatformIO environment: `esp32doit-devkit-v1`, Arduino framework.
+- Classic 30-pin ESP32/ESP-WROOM-32 DevKit-style board. The photographed board appears to use Micro-USB.
+- VL53L0X #1 measures the left claw position.
+- VL53L0X #2 measures the right claw position.
+- There is no sensor inside the phone box. Pressing Start locks the box; lifting the pencil/claws starts active-time accumulation.
+- SG90 #1 controls the phone lock on GPIO26.
+- SG90 #2 is reserved for a later shell dispenser on GPIO25.
+- RC522 is reserved for claiming a completed-session shell reward; it does not unlock the phone.
+- No buzzer is included.
+- The ESP32 will host the site through an open `Focus-Lock` access point for the demo.
+
+The display will show `MM:SS` for ordinary sessions. If a selected duration exceeds 99 minutes, firmware can switch the same four digits to `HH:MM`; short 10/20/30-second development goals remain available.
+
+The TM1637 represents the crab's eyes. Its implementation is assigned to another contributor, so integration should preserve their display work and the GPIO14/GPIO13 allocation.
+
+## Firmware base
+
+The current firmware provides:
+
+- an open `Focus-Lock` Wi-Fi access point at `http://192.168.4.1`;
+- LittleFS hosting for the website;
+- sequential XSHUT initialization for both VL53L0X sensors;
+- debounced two-claw study detection and raw distance diagnostics;
+- timestamp-based pause/resume accumulation;
+- `GET /status`, `POST /start`, and `POST /reset`;
+- safe boot unlock and guarded servo calibration.
+
+Servo output is disabled by default. Follow `HARDWARE_TRAINING.md` before changing `SERVO_ENABLED` to `true`.
+
+### Prototype power warning
+
+The photographed ELEGOO Power MB V2 accepts the 9 V battery through its barrel jack and can provide breadboard rails, but a rectangular 9 V battery is not a suitable dependable source for one or two SG90 servos. Servo current spikes can collapse the rail, reset the ESP32, or make the lock move unpredictably. During development, power the ESP32 over USB and use a regulated 5 V supply with adequate current for the servos; join the external supply ground to ESP32 ground. Do not feed 9 V directly to an ESP32 or servo pin.

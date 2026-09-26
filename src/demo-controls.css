@@ -1,0 +1,28 @@
+.quick-demo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.quick-demo span {
+  margin-right: 3px;
+  color: #60787d;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.quick-demo button {
+  min-width: 0;
+  min-height: 0;
+  padding: 7px 10px;
+  border: 1px solid #bcd9d9;
+  color: var(--deep);
+  background: #eaf7f5;
+  font-size: 9px;
+}
+
+.quick-demo button:hover:not(:disabled) {
+  color: white;
+  background: var(--deep);
+}
