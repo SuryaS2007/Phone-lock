@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#15231b"><title>Focus Lock</title>
+  <link rel="stylesheet" href="./src/styles.css">
+</head>
+<body>
+  <div class="sky" aria-hidden="true"><span class="sun"></span><span class="cloud cloud-one"></span><span class="cloud cloud-two"></span></div>
+  <div class="ocean" aria-hidden="true"><div class="wave wave-back"></div><div class="wave wave-front"></div></div>
+  <main class="timer-shell">
+    <header><span class="logo">🦀</span><span>Focus Lock</span><span id="connection" class="connection offline"><i></i> Offline</span></header>
+    <section class="timer" aria-labelledby="timer-title">
+      <div class="crab" aria-hidden="true"><span>⌒</span><b>•&nbsp;&nbsp;•</b></div>
+      <p id="timer-title">Time remaining</p>
+      <output id="time" aria-live="polite">00:00</output>
+      <div class="progress" role="progressbar" aria-label="Study progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="progress-fill"></span></div>
+      <p id="status" class="status">Connecting to controller…</p>
+      <form id="start-form">
+        <label for="duration">Study goal</label>
+        <div class="controls"><div class="input-wrap"><input id="duration" type="number" min="1" max="480" value="25" required><span>minutes</span></div><button id="start" type="submit" disabled>Start</button></div>
+      </form>
+      <p id="message" class="message" role="status" aria-live="polite"></p>
+
+      <section class="music" aria-labelledby="music-title">
+        <div class="music-heading"><span class="music-icon">♫</span><div><h2 id="music-title">Study soundtrack</h2><p id="track-name">Choose music from your device</p></div></div>
+        <div class="music-controls">
+          <label class="choose-track" for="music-file">Choose audio</label>
+          <input id="music-file" type="file" accept="audio/*">
+          <button id="music-toggle" class="music-toggle" type="button" disabled>Play</button>
+          <label class="volume-label" for="volume">Volume</label>
+          <input id="volume" class="volume" type="range" min="0" max="1" step="0.05" value="0.45">
+        </div>
+        <audio id="audio" loop></audio>
+      </section>
+    </section>
+  </main>
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>
