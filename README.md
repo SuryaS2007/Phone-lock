@@ -1,126 +1,79 @@
-# Focus Lock website
+# Focus Lock
 
-The website is a beach-themed timer remote for the Focus Lock microcontroller. The ESP32 owns the sensors, servo, session state, and authoritative active-study clock. The browser only:
+Focus Lock is an ESP32-powered phone lock and active-study timer. RFID tags embedded in physical shells identify saved study durations. The website changes the duration associated with each shell. After scanning a shell, lifting the pencil from its fixed crab-claw rest locks the phone drawer and starts the countdown; returning the pencil pauses it. Reaching zero unlocks the drawer.
 
-- displays remaining study time and progress;
-- accepts a goal in minutes;
-- sends a start command; and
-- shows controller connectivity and the current session status;
-- plays a locally selected study soundtrack.
-
-The chosen music file stays on the device and is never uploaded. Choose an audio file, then use Play/Pause and Volume. Playback loops until paused or the page is closed. Browsers require the user to press Play; websites cannot start audio automatically without interaction.
-
-## Run the website
-
-Node.js 18 or newer is required. No packages need to be installed.
-
-```sh
-npm start
-```
-
-Open `http://localhost:4173`.
-
-## Set the ESP32 address
-
-Edit `src/config.js`:
-
-```js
-controllerUrl: "http://focus-lock.local"
-```
-
-Replace that value with the hostname or IP printed by the ESP32, for example `http://192.168.1.50`. If the ESP32 serves the website itself, use an empty string so requests go back to the same host.
-
-## API required from the ESP32
-
-### `GET /status`
-
-The website requests this every 500 ms. Return JSON:
-
-```json
-{
-  "phonePresent": true,
-  "pencilPresent": false,
-  "locked": true,
-  "sessionActive": true,
-  "activeTime": 120,
-  "targetTime": 1800,
-  "state": "LOCKED_STUDYING"
-}
-```
-
-Times are seconds. `state` must be one of `IDLE`, `READY`, `LOCKED_PAUSED`, `LOCKED_STUDYING`, or `COMPLETE`.
-
-### `POST /start`
-
-The website sends JSON with the goal in seconds:
-
-```json
-{ "duration": 1800 }
-```
-
-Return the same status object as `GET /status` after locking and starting the session.
-
-### Required headers
-
-If the website is served from a computer while the ESP32 uses a different address, the ESP32 responses need:
+## Final prototype flow
 
 ```text
-Access-Control-Allow-Origin: *
-Access-Control-Allow-Headers: Content-Type
-Access-Control-Allow-Methods: GET, POST, OPTIONS
+Scan RFID shell
+-> ESP32 loads that shell's saved duration
+-> optionally change/save its duration on the website
+-> place pencil on the fixed claws
+-> lift pencil
+-> drawer locks, buzzer sounds, countdown starts
+-> return pencil to pause
+-> lift it to resume
+-> countdown reaches zero
+-> drawer unlocks and buzzer sounds
 ```
 
-The ESP32 must also answer `OPTIONS` preflight requests for `/start`. Serving the website directly from the ESP32 avoids cross-origin configuration.
+RFID UIDs are hardware identifiers and are not rewritten. The website stores an editable UID-to-duration association in ESP32 nonvolatile memory.
 
-## Current files
+## Hardware roles
+
+- Generic 30-pin ESP32 DevKit V1: controller, Wi-Fi access point, API, timer, and website host.
+- Two VL53L0X sensors: detect whether the pencil rests across the stationary claws.
+- RC522: reads the RFID tag inside a shell and selects its duration.
+- SG90 on GPIO26: locks and unlocks the phone drawer.
+- SG90 on GPIO25: optionally sways the crab while active study time is counting.
+- TM1637 on GPIO14/GPIO13: physical countdown only.
+- LCD1602 at I2C address `0x27`: displays the crab-eye graphic.
+- Passive buzzer on GPIO17: start and completion sounds.
+- There is no phone-box sensor, reward system, or shell dispenser.
+
+Servo features, shake motion, and buzzer output are disabled by default until their hardware is safely powered and calibrated.
+
+## Website
+
+The beach-themed site is served by the ESP32 at `http://192.168.4.1` on its open `Focus-Lock` Wi-Fi network. It displays the timer and state, shows the last scanned shell UID, edits that shell's duration, provides short developer demos, and plays a user-selected local music file.
+
+## Main API
+
+- `GET /status`: timer, pencil, RFID, sensor, servo, and selected-shell status.
+- `GET /shells`: saved shell UID-to-duration mappings.
+- `POST /shell`: save `{ "uid": "A1B2C3D4", "duration": 1800 }`.
+- `POST /start`: developer demo duration in seconds.
+- `POST /reset`: cancel and safely unlock.
+
+Times are seconds. Up to 12 shell mappings and durations up to eight hours are supported.
+
+## PlatformIO
+
+```ini
+platform = espressif32@6.12.0
+board = esp32doit-devkit-v1
+framework = arduino
+```
+
+Use PlatformIO **Upload** for firmware and **Upload Filesystem Image** for the website. The build script copies the browser assets into LittleFS automatically.
+
+## Important files
 
 ```text
-index.html                         Timer UI
-src/app.js                         Polling, rendering, and Start behavior
-src/api/MicrocontrollerApi.js      ESP32 HTTP client
-src/config.js                      Controller URL and polling interval
-src/styles.css                     Timer UI styling
-server.js                          Local static website server
-PROJECT_LOG.md                     Complete change and decision history
-HARDWARE_TRAINING.md               Wiring, calibration, and acceptance tests
-firmware/src/main.cpp              ESP32 firmware entry point
-firmware/include/HardwareConfig.h  Safe-mode and calibration values
-firmware/include/PinConfig.h       ESP32 pin allocation
+platformio.ini                      PlatformIO environment and libraries
+firmware/src/main.cpp               ESP32 firmware
+firmware/include/PinConfig.h        GPIO allocation
+firmware/include/HardwareConfig.h   calibration and feature flags
+firmware/scripts/sync_web.py        browser-to-LittleFS asset sync
+index.html and src/                 website
+HARDWARE_TRAINING.md                wiring and calibration procedure
+PROJECT_LOG.md                      decisions and change history
 ```
 
-The earlier simulation core remains in `src/core` and `src/hardware` as reference and is covered by tests, but it is no longer loaded by the website.
+## Power warning
 
-## Confirmed prototype hardware plan
+SG90 servos require 4.8-6 V; regulated 5 V is the target. Do not power them from ESP32 3.3 V. The rectangular 9 V battery and breadboard regulator are not a dependable servo source. During development, power the ESP32 over USB and use an adequate regulated 5 V servo supply with its ground connected to ESP32 ground.
 
-- PlatformIO environment: `esp32doit-devkit-v1`, Arduino framework.
-- Classic 30-pin ESP32/ESP-WROOM-32 DevKit-style board. The photographed board appears to use Micro-USB.
-- VL53L0X #1 measures the left claw position.
-- VL53L0X #2 measures the right claw position.
-- There is no sensor inside the phone box. Pressing Start locks the box; lifting the pencil/claws starts active-time accumulation.
-- SG90 #1 controls the phone lock on GPIO26.
-- SG90 #2 is reserved for a later shell dispenser on GPIO25.
-- RC522 is reserved for claiming a completed-session shell reward; it does not unlock the phone.
-- No buzzer is included.
-- The ESP32 will host the site through an open `Focus-Lock` access point for the demo.
+If the LCD1602 I2C backpack is powered at 5 V, verify that its SDA/SCL pull-ups do not expose ESP32 pins to 5 V; use 3.3 V operation or proper level shifting as required.
 
-The display will show `MM:SS` for ordinary sessions. If a selected duration exceeds 99 minutes, firmware can switch the same four digits to `HH:MM`; short 10/20/30-second development goals remain available.
-
-The TM1637 represents the crab's eyes. Its implementation is assigned to another contributor, so integration should preserve their display work and the GPIO14/GPIO13 allocation.
-
-## Firmware base
-
-The current firmware provides:
-
-- an open `Focus-Lock` Wi-Fi access point at `http://192.168.4.1`;
-- LittleFS hosting for the website;
-- sequential XSHUT initialization for both VL53L0X sensors;
-- debounced two-claw study detection and raw distance diagnostics;
-- timestamp-based pause/resume accumulation;
-- `GET /status`, `POST /start`, and `POST /reset`;
-- safe boot unlock and guarded servo calibration.
-
-Servo output is disabled by default. Follow `HARDWARE_TRAINING.md` before changing `SERVO_ENABLED` to `true`.
-
-### Prototype power warning
-
-The photographed ELEGOO Power MB V2 accepts the 9 V battery through its barrel jack and can provide breadboard rails, but a rectangular 9 V battery is not a suitable dependable source for one or two SG90 servos. Servo current spikes can collapse the rail, reset the ESP32, or make the lock move unpredictably. During development, power the ESP32 over USB and use a regulated 5 V supply with adequate current for the servos; join the external supply ground to ESP32 ground. Do not feed 9 V directly to an ESP32 or servo pin.
+Apply the same caution to the TM1637 module: verify whether the actual board operates at 3.3 V or add suitable level shifting before using a 5 V-powered module with 3.3 V ESP32 GPIO.

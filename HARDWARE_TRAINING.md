@@ -1,25 +1,19 @@
 # Focus Lock hardware training
 
-Follow these stages in order. Do not connect the locking linkage during the first servo test.
+Work through these stages in order. Keep `SERVO_ENABLED`, `SHAKE_SERVO_ENABLED`, and `BUZZER_ENABLED` false until each component is tested safely.
 
-## 1. Prepare safe power
-
-For development:
+## 1. Power safely
 
 ```text
-Computer USB -> ESP32 USB port
-ESP32 3V3    -> both VL53L0X VIN pins
-ESP32 GND    -> both VL53L0X GND pins
-Regulated 5V -> SG90 red wire
-5V ground    -> SG90 brown/black wire AND ESP32 GND
-GPIO26       -> SG90 orange/yellow signal wire
+Computer USB -> ESP32
+ESP32 3V3 -> VL53L0X and RC522 power
+Regulated 5V -> SG90 red wires
+5V supply ground -> servo grounds AND ESP32 GND
 ```
 
-Do not use the rectangular 9 V battery and breadboard regulator as the dependable SG90 supply. Obtain a regulated 5 V supply or USB power source capable of handling servo current. Do not connect its 5 V output to ESP32 `3V3`.
+Do not use the rectangular 9 V battery as the dependable servo source. SG90 voltage must remain within 4.8-6 V; use regulated 5 V.
 
-Leave the servo power disconnected during sensor training.
-
-## 2. Wire the two claw sensors
+## 2. Wire the pencil sensors
 
 ```text
 Both SDA    -> GPIO21
@@ -30,110 +24,97 @@ Left XSHUT  -> GPIO32
 Right XSHUT -> GPIO33
 ```
 
-The firmware holds both sensors off, starts the left sensor at `0x30`, and then starts the right sensor at `0x31`.
+The claws do not move. Mount one sensor under each side of the pencil rest. Firmware assigns the sensors I2C addresses `0x30` and `0x31` after every boot.
 
-## 3. Build and upload the safe base
+## 3. Upload the safe base
 
-1. Restart VS Code after installing PlatformIO.
-2. Open this repository folder.
-3. Open the PlatformIO sidebar.
-4. Under `esp32doit-devkit-v1`, run **Build**.
-5. Connect the ESP32 over USB and run **Upload**.
-6. Run **Upload Filesystem Image** so the website is copied into LittleFS.
-7. Open **Monitor** at 115200 baud.
+1. Build and upload the `esp32doit-devkit-v1` environment.
+2. Run **Upload Filesystem Image**.
+3. Open Serial Monitor at 115200 baud.
+4. Confirm both pencil sensors and RC522 initialize.
 
-The first boot should say `SAFE MODE: Servo output disabled`. This is intentional.
+## 4. Calibrate pencil presence
 
-## 4. Train the claw distances
-
-With `SENSOR_DIAGNOSTICS = true`, Serial Monitor prints values such as:
+Serial Monitor prints:
 
 ```text
-CLAW_RAW left=42 right=45 lifted=false
+PENCIL_RAW left=42 right=45 removed=false
 ```
 
-Record around ten stable readings for each condition:
+Record ten readings with the pencil resting and ten with it removed. Put the halfway values in `HardwareConfig.h`:
 
-| Condition | Left range | Right range |
-|---|---:|---:|
-| Pencil resting / claws down | | |
-| Pencil lifted / claws up | | |
+```cpp
+LEFT_PENCIL_THRESHOLD_MM = ...;
+RIGHT_PENCIL_THRESHOLD_MM = ...;
+```
 
-For each sensor, choose a threshold halfway between its average down and up values.
+If readings are lower when the pencil is present, keep `PENCIL_PRESENT_WHEN_DISTANCE_LESS = true`; otherwise change it to `false`.
 
-Example only:
+The firmware considers the pencil removed only when both sensors report it absent for at least 350 ms. Returning it over either sensor pauses the timer.
+
+## 5. Train RFID shell durations
+
+Wire the RC522 using the pins in `PinConfig.h`, restart, and connect to the open `Focus-Lock` Wi-Fi network.
+
+1. Open `http://192.168.4.1`.
+2. Scan one shell tag.
+3. Confirm its UID appears on the website.
+4. Enter a duration and select **Save shell**.
+5. Scan another shell and give it a different duration.
+6. Restart the ESP32 and verify each saved duration remains.
+
+The tag UID is not changed; only its stored duration association changes.
+
+## 6. Test the timer without servos
+
+1. Scan a configured shell or choose a 10-second demo.
+2. Rest the pencil across the claws.
+3. Lift the pencil and confirm the countdown begins.
+4. Return it and confirm the countdown pauses.
+5. Lift it again and confirm the timer reaches zero.
+6. Confirm the TM1637 shows remaining `MM:SS`.
+
+Verify the TM1637 module's logic voltage before connection. Prefer 3.3 V operation if the module is reliable there; otherwise use appropriate level shifting for its CLK/DIO signals.
+
+## 7. Calibrate the lock SG90
+
+Remove the horn or disconnect the linkage. Use a regulated 5 V supply with common ground. Set:
+
+```cpp
+SERVO_ENABLED = false;
+SERVO_CALIBRATION_MODE = true;
+```
+
+Upload and send `+` or `-` in Serial Monitor to move five degrees at a time. Record safe unlock and lock angles, then set:
+
+```cpp
+SERVO_UNLOCK_ANGLE = ...;
+SERVO_LOCK_ANGLE = ...;
+SERVO_CALIBRATION_MODE = false;
+SERVO_ENABLED = true;
+```
+
+Stop immediately if the servo stalls, buzzes continuously, heats up, or pushes against a hard stop.
+
+## 8. Add buzzer and shake servo
+
+The buzzer code assumes a passive buzzer on GPIO17. After verifying its type and wiring, set `BUZZER_ENABLED = true`.
+
+The second SG90 uses GPIO25. Calibrate safe left, center, and right angles before setting `SHAKE_SERVO_ENABLED = true`. When enabled, it sways only during `LOCKED_STUDYING` and centers while paused or complete.
+
+## 9. LCD1602 eyes
+
+The base assumes an I2C-backpack LCD1602 at address `0x27` on GPIO21/GPIO22. If it does not respond, run an I2C scan; common alternatives include `0x3F`. Verify safe I2C logic voltage before using a 5 V backpack.
+
+## 10. Acceptance test
+
+Repeat at least ten times:
 
 ```text
-Left down average:  40 mm
-Left up average:   120 mm
-Threshold:          80 mm
+Scan shell -> duration loads -> pencil rests -> pencil lifts
+-> lock and start sound -> countdown runs -> pencil returns
+-> countdown pauses -> pencil lifts -> countdown completes
+-> unlock and completion sound
 ```
 
-Edit `firmware/include/HardwareConfig.h`:
-
-```cpp
-constexpr unsigned int LEFT_CLAW_THRESHOLD_MM = 80;
-constexpr unsigned int RIGHT_CLAW_THRESHOLD_MM = 80;
-```
-
-If lifted values are higher, keep `CLAW_LIFTED_WHEN_DISTANCE_GREATER = true`. If lifted values are lower, change it to `false`.
-
-Rebuild and upload. Confirm Serial Monitor shows `LIFTED / STUDYING` only when both claws are lifted and `DOWN / PAUSED` when either claw is down.
-
-## 5. Test timing before enabling the servo
-
-1. Connect a phone or laptop to the open Wi-Fi network `Focus-Lock`.
-2. Open `http://192.168.4.1`.
-3. Select the 10-second quick demo.
-4. Keep the claws down and confirm the timer remains paused.
-5. Lift both claws and confirm the timer counts down.
-6. Lower either claw and confirm it pauses.
-7. Lift both again and confirm it reaches zero.
-
-The website will say the servo is in safe setup mode. This is expected.
-
-## 6. Calibrate the SG90 without the mechanism
-
-Disconnect power before changing wiring. Remove the servo horn or disconnect the lock linkage.
-
-In `HardwareConfig.h`, set:
-
-```cpp
-constexpr bool SERVO_ENABLED = false;
-constexpr bool SERVO_CALIBRATION_MODE = true;
-constexpr int SERVO_CALIBRATION_START_ANGLE = 90;
-```
-
-Connect the servo to a proper regulated 5 V supply with common ground, rebuild, upload, and open Serial Monitor. Send `+` to move 5 degrees higher or `-` to move 5 degrees lower.
-
-Find unlock and lock positions without forcing the mechanism. Stop if the servo buzzes, stalls, heats up, or presses against a hard stop.
-
-Record the working angles:
-
-```cpp
-constexpr int SERVO_UNLOCK_ANGLE = ...;
-constexpr int SERVO_LOCK_ANGLE = ...;
-```
-
-Then set:
-
-```cpp
-constexpr bool SERVO_CALIBRATION_MODE = false;
-constexpr bool SERVO_ENABLED = true;
-```
-
-Reattach the linkage while the servo is at the known unlock angle.
-
-## 7. Run the complete demo
-
-1. Restart the ESP32 and confirm it moves to unlock.
-2. Connect to `Focus-Lock` and open `http://192.168.4.1`.
-3. Start a 10-second demo; confirm the drawer locks.
-4. Lift both claws; confirm the countdown runs.
-5. Lower either claw; confirm it pauses.
-6. Lift both claws again; confirm it finishes and unlocks.
-7. Repeat at least ten times before placing a valuable phone inside.
-
-## 8. Teammate display integration
-
-The TM1637 crab-eye display owns GPIO14 (`CLK`) and GPIO13 (`DIO`). Pull your teammate's branch before integrating their display code. Do not duplicate or overwrite their implementation. The timer values they need are `activeTimeMs()`, `targetTimeMs`, and `sessionState` in `firmware/src/main.cpp`.
+Test with a nonvaluable object before placing a phone inside, and retain a manual release.

@@ -3,26 +3,47 @@ import { config } from "./config.js";
 
 const api = new MicrocontrollerApi(config.controllerUrl || window.location.origin);
 const elements = {
-  connection: document.querySelector("#connection"), time: document.querySelector("#time"),
-  status: document.querySelector("#status"), progress: document.querySelector(".progress"),
-  fill: document.querySelector("#progress-fill"), form: document.querySelector("#start-form"),
-  duration: document.querySelector("#duration"), start: document.querySelector("#start"),
-  message: document.querySelector("#message"), musicFile: document.querySelector("#music-file"),
-  musicToggle: document.querySelector("#music-toggle"), volume: document.querySelector("#volume"),
-  audio: document.querySelector("#audio"), trackName: document.querySelector("#track-name")
+  connection: document.querySelector("#connection"),
+  time: document.querySelector("#time"),
+  status: document.querySelector("#status"),
+  progress: document.querySelector(".progress"),
+  fill: document.querySelector("#progress-fill"),
+  form: document.querySelector("#shell-form"),
+  uid: document.querySelector("#shell-uid"),
+  duration: document.querySelector("#shell-duration"),
+  save: document.querySelector("#save-shell"),
+  message: document.querySelector("#message"),
+  musicFile: document.querySelector("#music-file"),
+  musicToggle: document.querySelector("#music-toggle"),
+  volume: document.querySelector("#volume"),
+  audio: document.querySelector("#audio"),
+  trackName: document.querySelector("#track-name"),
+  quickDemo: [...document.querySelectorAll("[data-demo-seconds]")]
 };
-elements.quickDemo = [...document.querySelectorAll("[data-demo-seconds]")];
+
 let connected = false;
 let requestPending = false;
 let musicUrl = null;
+let displayedUid = "";
 
 function formatTime(seconds) {
-  const value = Math.max(0, Math.floor(Number(seconds) || 0));
-  return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+  const value = Math.max(0, Math.ceil(Number(seconds) || 0));
+  const hours = Math.floor(value / 3600);
+  const minutes = Math.floor((value % 3600) / 60);
+  const remainder = value % 60;
+  return hours > 0
+    ? `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`
+    : `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
 }
 
 function labelFor(state) {
-  return ({ IDLE:"Insert phone", READY:"Ready", LOCKED_PAUSED:"Paused", LOCKED_STUDYING:"Studying", COMPLETE:"Complete — phone unlocked" })[state] || "Ready";
+  return ({
+    WAITING_FOR_SHELL: "Scan an RFID shell",
+    ARMED: "Shell loaded — lift pencil to begin",
+    LOCKED_PAUSED: "Paused — pencil is resting",
+    LOCKED_STUDYING: "Studying",
+    COMPLETE: "Complete — phone unlocked"
+  })[state] || "Waiting for controller";
 }
 
 function setConnection(value) {
@@ -30,33 +51,46 @@ function setConnection(value) {
   elements.connection.classList.toggle("offline", !value);
   elements.connection.classList.toggle("online", value);
   elements.connection.lastChild.textContent = value ? " Connected" : " Offline";
-  if (!value) {
-    elements.start.disabled = true;
-    elements.quickDemo.forEach((button) => { button.disabled = true; });
-  }
+  if (!value) disableControls(true);
+}
+
+function disableControls(disabled) {
+  elements.save.disabled = disabled || !elements.uid.value;
+  elements.quickDemo.forEach((button) => { button.disabled = disabled; });
 }
 
 function render(data) {
   const active = Number(data.activeTime) || 0;
   const target = Number(data.targetTime) || 0;
+  const remaining = Number.isFinite(Number(data.remainingTime)) ? Number(data.remainingTime) : Math.max(0, target - active);
   const percent = target ? Math.min(100, active / target * 100) : 0;
-  const remaining = target ? Math.max(0, target - active) : 0;
   elements.time.value = formatTime(remaining);
   elements.status.textContent = labelFor(data.state);
   elements.fill.style.width = `${percent}%`;
   elements.progress.setAttribute("aria-valuenow", String(Math.round(percent)));
-  elements.duration.disabled = Boolean(data.sessionActive);
-  const controlsDisabled = requestPending || !connected || Boolean(data.sessionActive) || data.sensorsReady === false;
-  elements.start.disabled = controlsDisabled;
-  elements.quickDemo.forEach((button) => { button.disabled = controlsDisabled; });
-  elements.start.textContent = data.sessionActive ? "In progress" : "Start";
-  if (data.sensorsReady === false) elements.status.textContent = "Claw sensors need setup";
+
+  const uid = data.activeTagUid || "";
+  if (uid !== displayedUid) {
+    displayedUid = uid;
+    elements.uid.value = uid;
+    if (uid) elements.duration.value = Math.max(1, Math.round((Number(data.selectedDuration) || 1500) / 60));
+  }
+
+  const unavailable = requestPending || !connected || Boolean(data.sessionActive);
+  elements.duration.disabled = unavailable || !uid;
+  elements.save.disabled = unavailable || !uid || data.rfidReady === false;
+  elements.quickDemo.forEach((button) => {
+    button.disabled = unavailable || data.sensorsReady === false;
+  });
+  if (data.sensorsReady === false) elements.status.textContent = "Pencil sensors need setup";
+  else if (data.rfidReady === false) elements.status.textContent = "RFID reader needs setup";
 }
 
 async function refresh() {
   try {
     const data = await api.getStatus();
-    setConnection(true); render(data);
+    setConnection(true);
+    render(data);
     if (elements.message.textContent === "Controller unavailable. Retrying…") elements.message.textContent = "";
   } catch {
     setConnection(false);
@@ -65,26 +99,36 @@ async function refresh() {
   }
 }
 
-async function startSession(duration) {
-  if (requestPending) return;
-  requestPending = true; elements.start.disabled = true; elements.message.textContent = "Starting session…";
-  elements.quickDemo.forEach((button) => { button.disabled = true; });
+elements.form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const minutes = Number(elements.duration.value);
+  if (!elements.uid.value || !Number.isFinite(minutes) || minutes <= 0 || requestPending) return;
+  requestPending = true;
+  disableControls(true);
+  elements.message.textContent = "Saving shell time…";
   try {
-    const status = await api.start(duration);
-    render(status);
-    elements.message.textContent = status.locked ? "Session started. Phone locked." : "Session started. Servo is in safe setup mode.";
-  } catch (error) { elements.message.textContent = error.message; }
+    render(await api.saveShell(elements.uid.value, Math.round(minutes * 60)));
+    elements.message.textContent = `Saved ${minutes} minute${minutes === 1 ? "" : "s"} for shell ${elements.uid.value}.`;
+  } catch (error) {
+    elements.message.textContent = error.message;
+  } finally {
+    requestPending = false;
+    await refresh();
+  }
+});
+
+async function startDemo(duration) {
+  if (requestPending) return;
+  requestPending = true;
+  disableControls(true);
+  elements.message.textContent = `Demo armed for ${duration} seconds. Rest, then lift the pencil.`;
+  try { render(await api.start(duration)); }
+  catch (error) { elements.message.textContent = error.message; }
   finally { requestPending = false; await refresh(); }
 }
 
-elements.form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const duration = Number(elements.duration.value) * 60;
-  if (Number.isFinite(duration) && duration > 0) await startSession(duration);
-});
-
 elements.quickDemo.forEach((button) => {
-  button.addEventListener("click", () => startSession(Number(button.dataset.demoSeconds)));
+  button.addEventListener("click", () => startDemo(Number(button.dataset.demoSeconds)));
 });
 
 elements.musicFile.addEventListener("change", () => {
@@ -101,7 +145,8 @@ elements.musicFile.addEventListener("change", () => {
 
 elements.musicToggle.addEventListener("click", async () => {
   if (elements.audio.paused) {
-    try { await elements.audio.play(); } catch { elements.message.textContent = "Your browser could not play this audio file."; }
+    try { await elements.audio.play(); }
+    catch { elements.message.textContent = "Your browser could not play this audio file."; }
   } else elements.audio.pause();
 });
 

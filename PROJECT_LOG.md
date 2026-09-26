@@ -98,6 +98,41 @@ Recorded on **2026-09-25**:
 
 ## Change Log
 
+### 2026-09-26 — Final interaction model corrected and implemented
+
+**Corrected requirements**
+
+- The crab claws are stationary. The pencil rests across them; removing the pencil starts or resumes active study time, and returning it pauses.
+- RFID tags are embedded in shells. Each immutable tag UID maps to an editable duration stored in ESP32 nonvolatile memory.
+- The website scans/displays the active shell and changes its associated duration; RFID is not a reward or unlock mechanism.
+- Reaching zero unlocks the phone drawer.
+- TM1637 is the physical countdown display only. LCD1602 displays the crab eyes.
+- There is no reward or shell dispenser.
+- The second SG90 sways the crab laterally while studying.
+- A buzzer indicates session start and completion. There is still no sensor inside the phone cabinet.
+- SG90 supply must remain within 4.8-6 V, with regulated 5 V preferred.
+
+**Implementation changes**
+
+- Reworked the ESP32 state flow to `WAITING_FOR_SHELL`, `ARMED`, `LOCKED_PAUSED`, `LOCKED_STUDYING`, and `COMPLETE`.
+- Added RC522 scanning and persistent storage for up to 12 UID-duration mappings.
+- Added `GET /shells` and `POST /shell` and retained developer start/reset routes.
+- Reworked the website into a scanned-shell duration editor.
+- Changed sensor logic from claw movement to stationary pencil presence/removal.
+- Added TM1637 countdown output, an LCD1602 I2C eye-display driver, passive-buzzer tones, and safely disabled second-servo sway behavior.
+- Assigned GPIO17 to the buzzer and GPIO25 to the shake servo.
+- Rewrote `README.md` and `HARDWARE_TRAINING.md` around the corrected design.
+
+**Safety defaults**
+
+- Lock servo, shake servo, and buzzer remain disabled until their physical calibration/type checks are complete.
+- LCD1602 defaults to I2C address `0x27`; power and pull-up voltage must be verified.
+
+**Verification**
+
+- Corrected firmware compiles for `esp32doit-devkit-v1` with RC522 and TM1637 libraries.
+- Build uses 46,360 bytes RAM (14.1%) and 877,705 bytes application flash (67.0%) before the final browser/documentation-only changes.
+
 ### 2026-09-26 — Safe ESP32 firmware base implemented
 
 **Changes**

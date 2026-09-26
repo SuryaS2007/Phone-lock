@@ -11,6 +11,18 @@ export class MicrocontrollerApi {
     });
   }
 
+  async saveShell(uid, durationSeconds) {
+    return this.#request("/shell", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uid, duration: durationSeconds })
+    });
+  }
+
+  async getShells() { return this.#request("/shells"); }
+
+  async reset() { return this.#request("/reset", { method: "POST" }); }
+
   async #request(path, options) {
     let response;
     try {
