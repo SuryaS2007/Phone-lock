@@ -7,13 +7,135 @@
 
 LiquidCrystal lcd(23, 22, 21, 19, 18, 5);
 
+// ==========================================
+// CENTER EYE
+// ==========================================
+uint8_t centerTop[8] = {
+    0b01110,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b10101,
+    0b10101,
+    0b10101
+};
+
+uint8_t centerBottom[8] = {
+    0b10101,
+    0b10101,
+    0b10101,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b01110
+};
 
 // ==========================================
-// NORMAL EYES
+// LOOK LEFT
 // ==========================================
+uint8_t leftTop[8] = {
+    0b11110,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b11001,
+    0b11001,
+    0b11001
+};
 
-// Center - top
-byte normalTop[8] = {
+uint8_t leftBottom[8] = {
+    0b11001,
+    0b11001,
+    0b11001,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b01110
+};
+
+// ==========================================
+// LOOK RIGHT
+// ==========================================
+uint8_t rightTop[8] = {
+    0b01111,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b10011,
+    0b10011,
+    0b10011
+};
+
+uint8_t rightBottom[8] = {
+    0b10011,
+    0b10011,
+    0b10011,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b01110
+};
+
+// ==========================================
+// BLINK
+// ==========================================
+uint8_t blinkTop[8] = {
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b11111,
+    0b11111,
+    0b00000
+};
+
+uint8_t blinkBottom[8] = {
+    0b00000,
+    0b11111,
+    0b11111,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000
+};
+
+// ==========================================
+// HAPPY (Squinting up ^^)
+// ==========================================
+uint8_t happyTop[8] = {
+    0b00000,
+    0b00000,
+    0b00000,
+    0b01110,
+    0b10001,
+    0b10001,
+    0b10001,
+    0b00000
+};
+
+uint8_t happyBottom[8] = {
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000
+};
+
+// ==========================================
+// SURPRISED / SHOCKED (Tiny pupils)
+// ==========================================
+uint8_t surprisedTop[8] = {
     0b01110,
     0b10001,
     0b10001,
@@ -24,8 +146,7 @@ byte normalTop[8] = {
     0b10101
 };
 
-// Center - bottom
-byte normalBottom[8] = {
+uint8_t surprisedBottom[8] = {
     0b10101,
     0b10101,
     0b10001,
@@ -36,205 +157,172 @@ byte normalBottom[8] = {
     0b01110
 };
 
-
 // ==========================================
-// LOOK LEFT
+// SLEEPING (Closed resting eyelids)
 // ==========================================
-
-// Whole eye shifted toward LEFT
-byte leftTop[8] = {
-    0b01110,
-    0b10001,
-    0b10001,
-    0b10001,
-    0b10001,
-    0b10001,
-    0b11001,
-    0b11001
-};
-
-byte leftBottom[8] = {
-    0b11001,
-    0b11001,
-    0b10001,
-    0b10001,
-    0b10001,
-    0b10001,
-    0b10001,
-    0b01110
-};
-
-
-// ==========================================
-// LOOK RIGHT
-// ==========================================
-
-byte rightTop[8] = {
-    0b01110,
-    0b10001,
-    0b10001,
-    0b10001,
-    0b10001,
-    0b10001,
-    0b10011,
-    0b10011
-};
-
-byte rightBottom[8] = {
-    0b10011,
-    0b10011,
-    0b10001,
-    0b10001,
-    0b10001,
-    0b10001,
-    0b10001,
-    0b01110
-};
-
-
-// ==========================================
-// SLEEPY EYES
-// ==========================================
-
-// Drooping upper eyelid
-byte sleepyTop[8] = {
+uint8_t sleepTop[8] = {
     0b00000,
     0b00000,
     0b00000,
     0b00000,
-    0b11111,
-    0b11111,
-    0b11011,
-    0b11011
-};
-
-// Small opening underneath
-byte sleepyBottom[8] = {
-    0b11011,
-    0b11011,
-    0b10001,
-    0b10001,
-    0b10001,
+    0b00000,
     0b10001,
     0b01110,
     0b00000
 };
 
-
-// ==========================================
-// VERY SLEEPY / ALMOST CLOSED
-// ==========================================
-
-byte verySleepyTop[8] = {
+uint8_t sleepBottom[8] = {
     0b00000,
     0b00000,
     0b00000,
-    0b11111,
-    0b11111,
+    0b00000,
+    0b00000,
     0b00000,
     0b00000,
     0b00000
 };
 
-byte verySleepyBottom[8] = {
-    0b00000,
-    0b00000,
-    0b00000,
-    0b11111,
-    0b11111,
-    0b00000,
-    0b00000,
-    0b00000
-};
-
-
 // ==========================================
-// SHOW EYES
+// DRAW EYES
 // ==========================================
-
-void showEyes(byte top, byte bottom)
+void showEyes(uint8_t topCharacter, uint8_t bottomCharacter)
 {
-    // Left eye
+    // LEFT EYE
     lcd.setCursor(4, 0);
-    lcd.write(top);
+    lcd.write(topCharacter);
 
     lcd.setCursor(4, 1);
-    lcd.write(bottom);
+    lcd.write(bottomCharacter);
 
-    // Right eye
+    // RIGHT EYE
     lcd.setCursor(11, 0);
-    lcd.write(top);
+    lcd.write(topCharacter);
 
     lcd.setCursor(11, 1);
-    lcd.write(bottom);
+    lcd.write(bottomCharacter);
 }
 
+// ==========================================
+// DYNAMIC EMOTION LOADER
+// ==========================================
+void setEmotion(uint8_t* topArray, uint8_t* bottomArray) 
+{
+    // Overwrite slots 0 and 1 in the LCD's memory
+    lcd.createChar(0, topArray);
+    lcd.createChar(1, bottomArray);
+    
+    // Display the newly loaded characters
+    showEyes(0, 1);
+}
+
+// ==========================================
+// BLINK ANIMATION
+// ==========================================
+void blink()
+{
+    // Close
+    showEyes(6, 7);
+    delay(120);
+
+    // Open (Assumes slots 0 and 1 currently hold the center eyes)
+    showEyes(0, 1);
+    delay(150);
+}
 
 // ==========================================
 // SETUP
 // ==========================================
-
 void setup()
 {
     lcd.begin(16, 2);
 
-    lcd.createChar(0, normalTop);
-    lcd.createChar(1, normalBottom);
-
+    // Load initial characters into LCD memory slots 0-7
+    lcd.createChar(0, centerTop);
+    lcd.createChar(1, centerBottom);
     lcd.createChar(2, leftTop);
     lcd.createChar(3, leftBottom);
-
     lcd.createChar(4, rightTop);
     lcd.createChar(5, rightBottom);
-
-    lcd.createChar(6, sleepyTop);
-    lcd.createChar(7, sleepyBottom);
+    lcd.createChar(6, blinkTop);
+    lcd.createChar(7, blinkBottom);
 
     lcd.clear();
 
+    // Start centered
     showEyes(0, 1);
 
     delay(1000);
 }
 
-
 // ==========================================
 // ANIMATION
 // ==========================================
-
 void loop()
 {
-    // Normal
-    showEyes(0, 1);
-    delay(1200);
+    // --------------------------------------
+    // CENTER
+    // --------------------------------------
+    // Make sure center eyes are loaded into memory just in case 
+    // a previous emotion overwrote them.
+    setEmotion(centerTop, centerBottom);
+    delay(1000);
 
-
-    // Slowly look LEFT
+    // --------------------------------------
+    // LOOK LEFT
+    // --------------------------------------
     showEyes(2, 3);
-    delay(1000);
+    delay(900);
 
-
-    // Center
+    // --------------------------------------
+    // CENTER
+    // --------------------------------------
     showEyes(0, 1);
     delay(700);
 
-
-    // Slowly look RIGHT
+    // --------------------------------------
+    // LOOK RIGHT
+    // --------------------------------------
     showEyes(4, 5);
+    delay(900);
+
+    // --------------------------------------
+    // CENTER
+    // --------------------------------------
+    showEyes(0, 1);
     delay(1000);
 
+    // --------------------------------------
+    // BLINK
+    // --------------------------------------
+    blink();
+    delay(1000);
 
-    // Center
-    showEyes(0, 1);
-    delay(700);
+    // --------------------------------------
+    // HAPPY! ^^
+    // --------------------------------------
+    // This temporarily overwrites the center eye memory slots (0 and 1)
+    setEmotion(happyTop, happyBottom);
+    delay(2000);
 
-
-    // Get sleepy
-    showEyes(6, 7);
+    // --------------------------------------
+    // IDLE
+    // --------------------------------------
+    // Reset back to center eyes so the next loop starts correctly
+    setEmotion(centerTop, centerBottom);
     delay(1500);
 
+    blink();
+    delay(200);
+    blink();
+    delay(500);
+    
+    // Fall asleep
+    setEmotion(sleepTop, sleepBottom);
+    delay(3000);
 
-    // Wake up
-    showEyes(0, 1);
-    delay(2000);
+    // --------------------------------------
+    // GO TO SLEEP
+    // --------------------------------------
+    setEmotion(sleepTop, sleepBottom);
+    delay(3000);
 }
