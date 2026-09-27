@@ -599,6 +599,29 @@ Hardcode a reliable demo flow that does not depend on the failed RC522 tag scan.
 - ESP32 firmware compiled successfully (RAM 14.2%, flash 68.3%).
 - Upload is pending because the ESP32 USB serial device disappeared; only the laptop's COM3 port is currently visible.
 
+### 2026-09-27 — Teammate branch and LCD1602 expression integration
+
+**Request**
+
+Bring the teammates' commits into `main` and integrate the crab-eye expression code with the complete firmware.
+
+**Changes**
+
+- Merged the STL files from remote `main`: crab body, claw arm, and drawer base.
+- Merged the LCD expression branch while retaining its contributor history.
+- Ported center, left, right, blink, happy, surprised, and sleeping custom characters into the real `firmware/src/main.cpp` build.
+- Replaced blocking animation delays with a non-blocking state-driven animation so Wi-Fi, sensors, and the countdown continue running.
+- Mapped expressions to session behavior: surprised when armed, sleeping while paused, calm animation while waiting/studying, and happy when complete.
+- Adapted the prototype from a conflicting six-pin parallel connection to the project's existing LCD1602 I2C driver on GPIO21/GPIO22.
+- Removed the unused root-level prototype after porting its behavior and removed its unnecessary `LiquidCrystal` dependency.
+- Expanded `HARDWARE_TRAINING.md` with the LCD backpack wiring and pin-conflict warning.
+
+**Verification**
+
+- The combined `esp32doit-devkit-v1` firmware build completed successfully with exit code 0.
+- All five website/session-controller tests passed.
+- `git diff --check` reported no whitespace errors.
+
 ## Pending Work
 
 - Connect the physical sensors and determine reliable light thresholds.

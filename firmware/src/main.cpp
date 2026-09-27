@@ -52,6 +52,17 @@ class Lcd1602I2c {
     for (char character : padded) send(static_cast<uint8_t>(character), true);
   }
 
+  void createChar(uint8_t slot, const uint8_t glyph[8]) {
+    command(static_cast<uint8_t>(0x40 | ((slot & 0x07) << 3)));
+    for (uint8_t row = 0; row < 8; ++row) send(glyph[row], true);
+  }
+
+  void setCursor(uint8_t column, uint8_t row) {
+    command(static_cast<uint8_t>((row == 0 ? 0x80 : 0xC0) + min(column, static_cast<uint8_t>(15))));
+  }
+
+  void writeChar(uint8_t character) { send(character, true); }
+
  private:
   static constexpr uint8_t BACKLIGHT = 0x08;
   static constexpr uint8_t ENABLE = 0x04;
@@ -75,6 +86,60 @@ class Lcd1602I2c {
     Wire.endTransmission();
     delayMicroseconds(50);
   }
+};
+
+enum class EyeExpression {
+  CENTER,
+  LEFT,
+  RIGHT,
+  BLINK,
+  HAPPY,
+  SURPRISED,
+  SLEEP
+};
+
+// LCD1602 custom characters adapted from the teammate eye-expression prototype.
+const uint8_t CENTER_TOP[8] = {
+  0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b10101
+};
+const uint8_t CENTER_BOTTOM[8] = {
+  0b10101, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110
+};
+const uint8_t LEFT_TOP[8] = {
+  0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b11001, 0b11001, 0b11001
+};
+const uint8_t LEFT_BOTTOM[8] = {
+  0b11001, 0b11001, 0b11001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110
+};
+const uint8_t RIGHT_TOP[8] = {
+  0b01111, 0b10001, 0b10001, 0b10001, 0b10001, 0b10011, 0b10011, 0b10011
+};
+const uint8_t RIGHT_BOTTOM[8] = {
+  0b10011, 0b10011, 0b10011, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110
+};
+const uint8_t BLINK_TOP[8] = {
+  0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b11111, 0b11111, 0b00000
+};
+const uint8_t BLINK_BOTTOM[8] = {
+  0b00000, 0b11111, 0b11111, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000
+};
+const uint8_t HAPPY_TOP[8] = {
+  0b00000, 0b00000, 0b00000, 0b01110, 0b10001, 0b10001, 0b10001, 0b00000
+};
+const uint8_t HAPPY_BOTTOM[8] = {
+  0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000
+};
+const uint8_t SURPRISED_TOP[8] = {
+  0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10101, 0b10101
+};
+const uint8_t SURPRISED_BOTTOM[8] = {
+  0b10101, 0b10101, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110
+};
+const uint8_t SLEEP_TOP[8] = {
+  0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b10001, 0b01110, 0b00000
+};
+const uint8_t SLEEP_BOTTOM[8] = {
+  0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000
 };
 
 WebServer server(80);
@@ -134,6 +199,9 @@ unsigned long lastRfidDiagnosticAt = 0;
 unsigned long lastDisplayUpdateAt = 0;
 unsigned long lastShakeAt = 0;
 bool shakeDirection = false;
+EyeExpression currentEyeExpression = static_cast<EyeExpression>(255);
+SessionState lastEyeSessionState = SessionState::COMPLETE;
+unsigned long eyeAnimationStartedAt = 0;
 
 SessionState sessionState = SessionState::WAITING_FOR_SHELL;
 bool sessionActive = false;
@@ -512,6 +580,91 @@ void updateCountdownDisplay() {
     displayValue = static_cast<uint16_t>((minutes / 60UL) * 100UL + minutes % 60UL);
   }
   countdownDisplay.showNumberDec(displayValue, 0b01000000, true, 4, 0);
+}
+
+void showEyeCharacters(uint8_t topCharacter, uint8_t bottomCharacter) {
+  eyeDisplay.setCursor(4, 0);
+  eyeDisplay.writeChar(topCharacter);
+  eyeDisplay.setCursor(4, 1);
+  eyeDisplay.writeChar(bottomCharacter);
+  eyeDisplay.setCursor(11, 0);
+  eyeDisplay.writeChar(topCharacter);
+  eyeDisplay.setCursor(11, 1);
+  eyeDisplay.writeChar(bottomCharacter);
+}
+
+void setEyeExpression(EyeExpression expression) {
+  if (!HardwareConfig::LCD1602_ENABLED || expression == currentEyeExpression) return;
+
+  switch (expression) {
+    case EyeExpression::CENTER:
+      eyeDisplay.createChar(0, CENTER_TOP);
+      eyeDisplay.createChar(1, CENTER_BOTTOM);
+      showEyeCharacters(0, 1);
+      break;
+    case EyeExpression::LEFT:
+      showEyeCharacters(2, 3);
+      break;
+    case EyeExpression::RIGHT:
+      showEyeCharacters(4, 5);
+      break;
+    case EyeExpression::BLINK:
+      showEyeCharacters(6, 7);
+      break;
+    case EyeExpression::HAPPY:
+      eyeDisplay.createChar(0, HAPPY_TOP);
+      eyeDisplay.createChar(1, HAPPY_BOTTOM);
+      showEyeCharacters(0, 1);
+      break;
+    case EyeExpression::SURPRISED:
+      eyeDisplay.createChar(0, SURPRISED_TOP);
+      eyeDisplay.createChar(1, SURPRISED_BOTTOM);
+      showEyeCharacters(0, 1);
+      break;
+    case EyeExpression::SLEEP:
+      eyeDisplay.createChar(0, SLEEP_TOP);
+      eyeDisplay.createChar(1, SLEEP_BOTTOM);
+      showEyeCharacters(0, 1);
+      break;
+  }
+  currentEyeExpression = expression;
+}
+
+void updateEyeDisplay() {
+  if (!HardwareConfig::LCD1602_ENABLED) return;
+  const unsigned long now = millis();
+  if (sessionState != lastEyeSessionState) {
+    lastEyeSessionState = sessionState;
+    eyeAnimationStartedAt = now;
+    // Force a redraw because dynamic emotions reuse custom-character slots 0 and 1.
+    currentEyeExpression = static_cast<EyeExpression>(255);
+  }
+
+  const unsigned long phase = now - eyeAnimationStartedAt;
+  switch (sessionState) {
+    case SessionState::ARMED:
+      setEyeExpression(EyeExpression::SURPRISED);
+      return;
+    case SessionState::LOCKED_PAUSED:
+      setEyeExpression(EyeExpression::SLEEP);
+      return;
+    case SessionState::COMPLETE:
+      setEyeExpression(EyeExpression::HAPPY);
+      return;
+    case SessionState::WAITING_FOR_SHELL:
+    case SessionState::LOCKED_STUDYING:
+      break;
+  }
+
+  // A calm, non-blocking idle loop: center, glance left/right, and blink.
+  const unsigned long cycle = phase % 7000UL;
+  if (cycle < 2400UL) setEyeExpression(EyeExpression::CENTER);
+  else if (cycle < 3200UL) setEyeExpression(EyeExpression::LEFT);
+  else if (cycle < 4400UL) setEyeExpression(EyeExpression::CENTER);
+  else if (cycle < 5200UL) setEyeExpression(EyeExpression::RIGHT);
+  else if (cycle < 6400UL) setEyeExpression(EyeExpression::CENTER);
+  else if (cycle < 6550UL) setEyeExpression(EyeExpression::BLINK);
+  else setEyeExpression(EyeExpression::CENTER);
 }
 
 void addCorsHeaders() {
@@ -938,8 +1091,14 @@ void setupDisplays() {
   }
   if (HardwareConfig::LCD1602_ENABLED) {
     eyeDisplay.begin();
-    eyeDisplay.printLine(0, "   (o)    (o)   ");
-    eyeDisplay.printLine(1, "      \\__/      ");
+    eyeDisplay.createChar(2, LEFT_TOP);
+    eyeDisplay.createChar(3, LEFT_BOTTOM);
+    eyeDisplay.createChar(4, RIGHT_TOP);
+    eyeDisplay.createChar(5, RIGHT_BOTTOM);
+    eyeDisplay.createChar(6, BLINK_TOP);
+    eyeDisplay.createChar(7, BLINK_BOTTOM);
+    currentEyeExpression = static_cast<EyeExpression>(255);
+    setEyeExpression(EyeExpression::CENTER);
   }
 }
 
@@ -1011,6 +1170,7 @@ void loop() {
   updateRfid();
   updateSession();
   updateCountdownDisplay();
+  updateEyeDisplay();
   updateShake();
   handleServoCalibration();
   delay(2);

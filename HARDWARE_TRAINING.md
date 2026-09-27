@@ -112,6 +112,19 @@ The second SG90 uses GPIO25. Calibrate safe left, center, and right angles befor
 
 The base assumes an I2C-backpack LCD1602 at address `0x27` on GPIO21/GPIO22. If it does not respond, run an I2C scan; common alternatives include `0x3F`. Verify safe I2C logic voltage before using a 5 V backpack.
 
+Connect the four I2C-backpack pins as follows:
+
+| LCD1602 backpack | ESP32 |
+| --- | --- |
+| GND | GND |
+| VCC | Safe supply for the specific backpack; verify its logic voltage |
+| SDA | GPIO21 (shared with the VL53L0X sensors) |
+| SCL | GPIO22 (shared with the VL53L0X sensors) |
+
+The integrated firmware now animates center, left, right, blink, surprised, happy, and sleeping eyes. The expressions respond to the Focus Lock state: selecting a shell shows surprised eyes, a paused timer sleeps, active study uses the calm look/blink loop, and completion shows happy eyes.
+
+Do not connect the LCD using the earlier six-wire prototype assignment `(23, 22, 21, 19, 18, 5)`. Those pins conflict with the RC522 and VL53L0X hardware. The main firmware uses the I2C backpack so the LCD shares only GPIO21/GPIO22.
+
 ## 10. Acceptance test
 
 Repeat at least ten times:
