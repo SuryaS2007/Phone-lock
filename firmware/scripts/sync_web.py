@@ -10,10 +10,13 @@ data = Path(env.subst("$PROJECT_DATA_DIR"))
 
 assets = (
     "index.html",
+    "servo-test.html",
     "src/app.js",
     "src/config.js",
     "src/styles.css",
     "src/demo-controls.css",
+    "src/servo-test.js",
+    "src/servo-test.css",
     "src/api/MicrocontrollerApi.js",
 )
 

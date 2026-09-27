@@ -78,6 +78,12 @@ Verify the TM1637 module's logic voltage before connection. Prefer 3.3 V operati
 
 ## 7. Calibrate the lock SG90
 
+For an unloaded bench test, `SERVO_CYCLE_TEST_MODE` slowly moves the lock servo on GPIO26 from 90 degrees to 0 degrees and back to 90 degrees three times, then detaches the servo signal. Physical clockwise/counterclockwise direction depends on servo mounting. Keep this mode disabled during normal operation and never run it against a mechanical hard stop.
+
+`SERVO_SWIFT_TEST_MODE` sends direct positions without intermediate steps. The current physical 270 -> 180 -> 270 reference maps to servo commands 90 -> 0 -> 90. All executed tests are recorded in `SERVO_TEST_RUNS.md`.
+
+For normal calibration, connect to the `Focus-Lock` Wi-Fi network and open `http://192.168.4.1/servo-test.html`. The page can move to a direct angle, run repeated position sequences, stop and detach the servo, and save the selected angle as the locked or unlocked position. Saved angles persist in ESP32 nonvolatile memory. Servo controls are rejected while a study session is armed or running.
+
 Remove the horn or disconnect the linkage. Use a regulated 5 V supply with common ground. Set:
 
 ```cpp

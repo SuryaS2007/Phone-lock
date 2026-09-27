@@ -98,6 +98,47 @@ Recorded on **2026-09-25**:
 
 ## Change Log
 
+### 2026-09-26 — Phone connection verified
+
+- Confirmed `http://192.168.4.1/status` works from a phone connected directly to `Focus-Lock`.
+- This verifies that the ESP32 access point, DHCP, web server, and `/status` API are functioning.
+- The earlier offline behavior was isolated to the laptop's VPN and automatic Wi-Fi switching, not the ESP32, servo wiring, or web application.
+- Recommended demo workflow: control Focus Lock from a phone with VPN and mobile-data switching disabled while connected to `Focus-Lock`.
+
+### 2026-09-26 — USB Wi-Fi/HTTP diagnostics
+
+- Added serial logging when devices join or leave the ESP32 access point.
+- Added serial logging for static-file, `/status`, and `/servo/status` HTTP requests.
+- Made the AP channel and maximum client count explicit and disabled Wi-Fi sleep.
+- Added a clear success/failure result for access-point startup.
+
+### 2026-09-26 — Mobile controller connection compatibility
+
+- Replaced `AbortSignal.timeout()` with an `AbortController` timer supported by more mobile browsers.
+- Increased the controller request timeout to five seconds and disabled cached API responses.
+- Improved offline errors to distinguish a timeout from a failed network request.
+
+### 2026-09-26 — Permanent browser servo calibration tools
+
+- Added a beach-themed `/servo-test.html` control page served by the ESP32.
+- Added direct angle movement, presets, configurable repeated sequences, and emergency detach.
+- Added persistent locked/unlocked angle storage and connected those values to normal drawer movement.
+- Added asynchronous sequence execution so HTTP status and emergency-stop requests remain available.
+- Servo tools are guarded by `DEVELOPER_TOOLS_ENABLED` and blocked during study sessions.
+
+### 2026-09-26 — Servo test reference and swift-position test
+
+- Added `SERVO_TEST_RUNS.md` to record executed servo tests and angle mappings.
+- Added a guarded direct-position test for physical 270 -> 180 -> 270 movement.
+- The direct servo commands are 90 -> 0 -> 90 with no 1-degree stepping.
+
+### 2026-09-26 — Controlled lock-servo cycle test
+
+- Added a guarded `SERVO_CYCLE_TEST_MODE` for the lock servo on GPIO26.
+- The bench test moves slowly from 90 degrees to 0 degrees and back three times.
+- It finishes at 90 degrees and detaches the servo signal.
+- The mode is disabled during normal operation.
+
 ### 2026-09-26 — Final interaction model corrected and implemented
 
 **Corrected requirements**

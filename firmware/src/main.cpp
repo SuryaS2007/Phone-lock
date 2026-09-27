@@ -86,6 +86,7 @@ Lcd1602I2c eyeDisplay(HardwareConfig::LCD1602_ADDRESS);
 Servo lockServo;
 Servo shakeServo;
 Preferences preferences;
+Preferences servoPreferences;
 
 ShellSetting shells[HardwareConfig::MAX_SHELLS];
 size_t shellCount = 0;
@@ -98,6 +99,23 @@ bool filesystemReady = false;
 bool lockServoAttached = false;
 bool shakeServoAttached = false;
 bool drawerLocked = false;
+int lastReportedApClients = -1;
+int savedUnlockAngle = HardwareConfig::SERVO_UNLOCK_ANGLE;
+int savedLockAngle = HardwareConfig::SERVO_LOCK_ANGLE;
+int currentLockServoAngle = -1;
+
+struct ServoSequenceState {
+  bool active = false;
+  int outerAngle = 90;
+  int innerAngle = 0;
+  unsigned int repetitions = 1;
+  unsigned int completed = 0;
+  unsigned int holdMs = 700;
+  unsigned int leg = 0;
+  unsigned long changedAt = 0;
+};
+
+ServoSequenceState servoSequence;
 
 uint16_t leftDistanceMm = 0;
 uint16_t rightDistanceMm = 0;
@@ -159,21 +177,36 @@ void playCompleteSound() {
 
 void writeLockServo(int angle) {
   if (!lockServoAttached) return;
-  lockServo.write(constrain(angle, 0, 180));
+  currentLockServoAngle = constrain(angle, 0, 180);
+  lockServo.write(currentLockServoAngle);
   delay(250);
+}
+
+bool attachLockServo() {
+  if (lockServoAttached) return true;
+  lockServo.setPeriodHertz(50);
+  lockServo.attach(Pins::LOCK_SERVO, HardwareConfig::SERVO_MIN_PULSE_US, HardwareConfig::SERVO_MAX_PULSE_US);
+  lockServoAttached = lockServo.attached();
+  return lockServoAttached;
+}
+
+void detachLockServo() {
+  servoSequence.active = false;
+  if (lockServoAttached) lockServo.detach();
+  lockServoAttached = false;
 }
 
 void unlockDrawer() {
   if (HardwareConfig::SERVO_ENABLED || HardwareConfig::SERVO_CALIBRATION_MODE) {
-    writeLockServo(HardwareConfig::SERVO_UNLOCK_ANGLE);
+    if (attachLockServo()) writeLockServo(savedUnlockAngle);
   }
   drawerLocked = false;
 }
 
 void lockDrawer() {
   if (HardwareConfig::SERVO_ENABLED) {
-    writeLockServo(HardwareConfig::SERVO_LOCK_ANGLE);
-    drawerLocked = true;
+    drawerLocked = attachLockServo();
+    if (drawerLocked) writeLockServo(savedLockAngle);
   } else {
     drawerLocked = false;
     Serial.println("[SAFE MODE] Lock requested, but SERVO_ENABLED is false.");
@@ -408,6 +441,192 @@ void addCorsHeaders() {
   server.sendHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
 }
 
+void logHttpRequest() {
+  Serial.printf("HTTP %s from %s\n",
+    server.uri().c_str(),
+    server.client().remoteIP().toString().c_str());
+}
+
+void updateWifiDiagnostics() {
+  const int clients = static_cast<int>(WiFi.softAPgetStationNum());
+  if (clients == lastReportedApClients) return;
+  lastReportedApClients = clients;
+  Serial.printf("WIFI_AP clients=%d ip=%s\n", clients, WiFi.softAPIP().toString().c_str());
+}
+
+void loadServoSettings() {
+  servoPreferences.begin("focus-servo", false);
+  savedUnlockAngle = constrain(
+    servoPreferences.getInt("unlock", HardwareConfig::SERVO_UNLOCK_ANGLE),
+    HardwareConfig::SERVO_WEB_MIN_ANGLE,
+    HardwareConfig::SERVO_WEB_MAX_ANGLE);
+  savedLockAngle = constrain(
+    servoPreferences.getInt("lock", HardwareConfig::SERVO_LOCK_ANGLE),
+    HardwareConfig::SERVO_WEB_MIN_ANGLE,
+    HardwareConfig::SERVO_WEB_MAX_ANGLE);
+}
+
+bool servoToolsAvailable() {
+  return HardwareConfig::DEVELOPER_TOOLS_ENABLED &&
+    (sessionState == SessionState::WAITING_FOR_SHELL || sessionState == SessionState::COMPLETE);
+}
+
+String servoStatusJson() {
+  JsonDocument document;
+  document["developerToolsEnabled"] = HardwareConfig::DEVELOPER_TOOLS_ENABLED;
+  document["available"] = servoToolsAvailable();
+  document["attached"] = lockServoAttached;
+  document["sequenceActive"] = servoSequence.active;
+  document["currentAngle"] = currentLockServoAngle;
+  document["lockAngle"] = savedLockAngle;
+  document["unlockAngle"] = savedUnlockAngle;
+  document["completedRepetitions"] = servoSequence.completed;
+  document["totalRepetitions"] = servoSequence.repetitions;
+  document["minAngle"] = HardwareConfig::SERVO_WEB_MIN_ANGLE;
+  document["maxAngle"] = HardwareConfig::SERVO_WEB_MAX_ANGLE;
+  String payload;
+  serializeJson(document, payload);
+  return payload;
+}
+
+void sendServoStatus(int statusCode = 200) {
+  addCorsHeaders();
+  server.send(statusCode, "application/json", servoStatusJson());
+}
+
+bool requireServoTools() {
+  if (!HardwareConfig::DEVELOPER_TOOLS_ENABLED) {
+    addCorsHeaders();
+    server.send(403, "text/plain", "Developer servo tools are disabled");
+    return false;
+  }
+  if (!servoToolsAvailable()) {
+    addCorsHeaders();
+    server.send(409, "text/plain", "Reset or complete the study session before moving the servo");
+    return false;
+  }
+  return true;
+}
+
+void handleServoMove() {
+  if (!requireServoTools()) return;
+  JsonDocument document;
+  const DeserializationError error = deserializeJson(document, server.arg("plain"));
+  const int angle = document["angle"] | -1;
+  if (error || angle < HardwareConfig::SERVO_WEB_MIN_ANGLE || angle > HardwareConfig::SERVO_WEB_MAX_ANGLE) {
+    addCorsHeaders();
+    server.send(400, "text/plain", "Angle must be from 0 to 180 degrees");
+    return;
+  }
+  servoSequence.active = false;
+  if (!attachLockServo()) {
+    addCorsHeaders();
+    server.send(500, "text/plain", "Could not attach the lock servo");
+    return;
+  }
+  writeLockServo(angle);
+  Serial.printf("SERVO_WEB move=%d\n", angle);
+  sendServoStatus();
+}
+
+void handleServoSequenceStart() {
+  if (!requireServoTools()) return;
+  JsonDocument document;
+  const DeserializationError error = deserializeJson(document, server.arg("plain"));
+  const int outerAngle = document["outerAngle"] | -1;
+  const int innerAngle = document["innerAngle"] | -1;
+  const int repetitions = document["repetitions"] | 0;
+  const int holdMs = document["holdMs"] | 0;
+  if (error ||
+      outerAngle < HardwareConfig::SERVO_WEB_MIN_ANGLE || outerAngle > HardwareConfig::SERVO_WEB_MAX_ANGLE ||
+      innerAngle < HardwareConfig::SERVO_WEB_MIN_ANGLE || innerAngle > HardwareConfig::SERVO_WEB_MAX_ANGLE ||
+      repetitions < 1 || repetitions > static_cast<int>(HardwareConfig::SERVO_WEB_MAX_REPETITIONS) ||
+      holdMs < static_cast<int>(HardwareConfig::SERVO_WEB_MIN_HOLD_MS) ||
+      holdMs > static_cast<int>(HardwareConfig::SERVO_WEB_MAX_HOLD_MS)) {
+    addCorsHeaders();
+    server.send(400, "text/plain", "Invalid sequence settings");
+    return;
+  }
+  if (!attachLockServo()) {
+    addCorsHeaders();
+    server.send(500, "text/plain", "Could not attach the lock servo");
+    return;
+  }
+  servoSequence.outerAngle = outerAngle;
+  servoSequence.innerAngle = innerAngle;
+  servoSequence.repetitions = static_cast<unsigned int>(repetitions);
+  servoSequence.completed = 0;
+  servoSequence.holdMs = static_cast<unsigned int>(holdMs);
+  servoSequence.leg = 0;
+  servoSequence.active = true;
+  writeLockServo(outerAngle);
+  servoSequence.changedAt = millis();
+  Serial.printf("SERVO_WEB sequence=%d->%d->%d repeats=%d hold=%d\n",
+    outerAngle, innerAngle, outerAngle, repetitions, holdMs);
+  sendServoStatus(202);
+}
+
+void handleServoDetach() {
+  if (!HardwareConfig::DEVELOPER_TOOLS_ENABLED) {
+    addCorsHeaders();
+    server.send(403, "text/plain", "Developer servo tools are disabled");
+    return;
+  }
+  detachLockServo();
+  Serial.println("SERVO_WEB detached");
+  sendServoStatus();
+}
+
+void handleServoSave() {
+  if (!requireServoTools()) return;
+  JsonDocument document;
+  const DeserializationError error = deserializeJson(document, server.arg("plain"));
+  String position = document["position"] | "";
+  const int angle = document["angle"] | -1;
+  position.toLowerCase();
+  if (error || (position != "lock" && position != "unlock") ||
+      angle < HardwareConfig::SERVO_WEB_MIN_ANGLE || angle > HardwareConfig::SERVO_WEB_MAX_ANGLE) {
+    addCorsHeaders();
+    server.send(400, "text/plain", "Position must be lock or unlock and angle must be 0 to 180");
+    return;
+  }
+  if (position == "lock") {
+    savedLockAngle = angle;
+    servoPreferences.putInt("lock", angle);
+  } else {
+    savedUnlockAngle = angle;
+    servoPreferences.putInt("unlock", angle);
+  }
+  Serial.printf("SERVO_WEB saved %s=%d\n", position.c_str(), angle);
+  sendServoStatus();
+}
+
+void updateServoSequence() {
+  if (!servoSequence.active) return;
+  if (!lockServoAttached) {
+    servoSequence.active = false;
+    return;
+  }
+  if (millis() - servoSequence.changedAt < servoSequence.holdMs) return;
+
+  if (servoSequence.leg == 0) {
+    writeLockServo(servoSequence.innerAngle);
+    servoSequence.leg = 1;
+  } else if (servoSequence.leg == 1) {
+    writeLockServo(servoSequence.outerAngle);
+    ++servoSequence.completed;
+    servoSequence.leg = 2;
+  } else if (servoSequence.completed >= servoSequence.repetitions) {
+    detachLockServo();
+    Serial.println("SERVO_WEB sequence complete; signal detached");
+    return;
+  } else {
+    writeLockServo(servoSequence.innerAngle);
+    servoSequence.leg = 1;
+  }
+  servoSequence.changedAt = millis();
+}
+
 String statusJson() {
   JsonDocument document;
   const uint32_t active = activeTimeMs();
@@ -424,6 +643,7 @@ String statusJson() {
   document["sensorsReady"] = sensorsReady;
   document["rfidReady"] = rfidReady;
   document["servoEnabled"] = HardwareConfig::SERVO_ENABLED;
+  document["developerToolsEnabled"] = HardwareConfig::DEVELOPER_TOOLS_ENABLED;
   document["activeTagUid"] = selectedShellUid;
   document["selectedDuration"] = selectedDurationSeconds;
   document["shellConfigured"] = configured;
@@ -519,20 +739,34 @@ bool serveFile(String path) {
   if (path == "/") path = "/index.html";
   if (!LittleFS.exists(path)) return false;
   File file = LittleFS.open(path, "r");
+  server.sendHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  server.sendHeader("Pragma", "no-cache");
   server.streamFile(file, contentTypeFor(path));
   file.close();
   return true;
 }
 
 void configureWebServer() {
-  server.on("/status", HTTP_GET, []() { sendStatus(); });
+  server.on("/status", HTTP_GET, []() { logHttpRequest(); sendStatus(); });
   server.on("/shells", HTTP_GET, handleShellList);
   server.on("/shell", HTTP_POST, handleShellSave);
   server.on("/start", HTTP_POST, handleDeveloperStart);
   server.on("/reset", HTTP_POST, handleReset);
+  server.on("/servo/status", HTTP_GET, []() { logHttpRequest(); sendServoStatus(); });
+  server.on("/servo/move", HTTP_POST, handleServoMove);
+  server.on("/servo/sequence", HTTP_POST, handleServoSequenceStart);
+  server.on("/servo/detach", HTTP_POST, handleServoDetach);
+  server.on("/servo/save", HTTP_POST, handleServoSave);
   server.on("/start", HTTP_OPTIONS, []() { addCorsHeaders(); server.send(204); });
   server.on("/shell", HTTP_OPTIONS, []() { addCorsHeaders(); server.send(204); });
-  server.onNotFound([]() { if (!serveFile(server.uri())) server.send(404, "text/plain", "Not found"); });
+  server.on("/servo/move", HTTP_OPTIONS, []() { addCorsHeaders(); server.send(204); });
+  server.on("/servo/sequence", HTTP_OPTIONS, []() { addCorsHeaders(); server.send(204); });
+  server.on("/servo/detach", HTTP_OPTIONS, []() { addCorsHeaders(); server.send(204); });
+  server.on("/servo/save", HTTP_OPTIONS, []() { addCorsHeaders(); server.send(204); });
+  server.onNotFound([]() {
+    logHttpRequest();
+    if (!serveFile(server.uri())) server.send(404, "text/plain", "Not found");
+  });
   server.begin();
 }
 
@@ -547,6 +781,54 @@ void handleServoCalibration() {
   else return;
   writeLockServo(angle);
   Serial.printf("LOCK_SERVO_ANGLE=%d\n", angle);
+}
+
+void runServoCycleTest() {
+  if (!HardwareConfig::SERVO_CYCLE_TEST_MODE || !lockServoAttached) return;
+
+  const int originalAngle = HardwareConfig::SERVO_CYCLE_ORIGINAL_ANGLE;
+  const int ccwAngle = HardwareConfig::SERVO_CYCLE_CCW_ANGLE;
+  writeLockServo(originalAngle);
+  delay(HardwareConfig::SERVO_CYCLE_HOLD_MS);
+
+  for (unsigned int cycle = 1; cycle <= HardwareConfig::SERVO_CYCLE_REPETITIONS; ++cycle) {
+    Serial.printf("SERVO_CYCLE %u/%u: %d -> %d -> %d\n",
+      cycle, HardwareConfig::SERVO_CYCLE_REPETITIONS, originalAngle, ccwAngle, originalAngle);
+
+    for (int angle = originalAngle; angle >= ccwAngle; --angle) {
+      writeLockServo(angle);
+      delay(HardwareConfig::SERVO_CYCLE_STEP_DELAY_MS);
+    }
+    delay(HardwareConfig::SERVO_CYCLE_HOLD_MS);
+
+    for (int angle = ccwAngle; angle <= originalAngle; ++angle) {
+      writeLockServo(angle);
+      delay(HardwareConfig::SERVO_CYCLE_STEP_DELAY_MS);
+    }
+    delay(HardwareConfig::SERVO_CYCLE_HOLD_MS);
+  }
+
+  writeLockServo(originalAngle);
+  delay(HardwareConfig::SERVO_CYCLE_HOLD_MS);
+  lockServo.detach();
+  lockServoAttached = false;
+  Serial.println("SERVO_CYCLE complete; servo returned to 90 degrees and detached.");
+}
+
+void runServoSwiftTest() {
+  if (!HardwareConfig::SERVO_SWIFT_TEST_MODE || !lockServoAttached) return;
+
+  Serial.println("SERVO_SWIFT physical 270 -> 180 -> 270 (commands 90 -> 0 -> 90)");
+  writeLockServo(HardwareConfig::SERVO_SWIFT_270_COMMAND);
+  delay(HardwareConfig::SERVO_SWIFT_HOLD_MS);
+  writeLockServo(HardwareConfig::SERVO_SWIFT_180_COMMAND);
+  delay(HardwareConfig::SERVO_SWIFT_HOLD_MS);
+  writeLockServo(HardwareConfig::SERVO_SWIFT_270_COMMAND);
+  delay(HardwareConfig::SERVO_SWIFT_HOLD_MS);
+
+  lockServo.detach();
+  lockServoAttached = false;
+  Serial.println("SERVO_SWIFT complete at physical 270 (servo command 90); signal detached.");
 }
 
 void setupDisplays() {
@@ -565,12 +847,16 @@ void setup() {
   Serial.begin(115200);
   delay(500);
   Serial.println("\nFocus Lock booting...");
+  loadServoSettings();
 
-  if (HardwareConfig::SERVO_ENABLED || HardwareConfig::SERVO_CALIBRATION_MODE) {
+  if (HardwareConfig::SERVO_ENABLED || HardwareConfig::SERVO_CALIBRATION_MODE ||
+      HardwareConfig::SERVO_CYCLE_TEST_MODE || HardwareConfig::SERVO_SWIFT_TEST_MODE) {
     lockServo.setPeriodHertz(50);
     lockServo.attach(Pins::LOCK_SERVO, HardwareConfig::SERVO_MIN_PULSE_US, HardwareConfig::SERVO_MAX_PULSE_US);
     lockServoAttached = lockServo.attached();
-    if (HardwareConfig::SERVO_CALIBRATION_MODE) writeLockServo(HardwareConfig::SERVO_CALIBRATION_START_ANGLE);
+    if (HardwareConfig::SERVO_SWIFT_TEST_MODE) runServoSwiftTest();
+    else if (HardwareConfig::SERVO_CYCLE_TEST_MODE) runServoCycleTest();
+    else if (HardwareConfig::SERVO_CALIBRATION_MODE) writeLockServo(HardwareConfig::SERVO_CALIBRATION_START_ANGLE);
     else unlockDrawer();
   } else {
     Serial.println("SAFE MODE: Lock servo output disabled until calibration is complete.");
@@ -601,14 +887,19 @@ void setup() {
   loadShells();
   filesystemReady = LittleFS.begin(true);
   WiFi.mode(WIFI_AP);
-  WiFi.softAP(HardwareConfig::ACCESS_POINT_NAME);
+  WiFi.setSleep(false);
+  const bool accessPointStarted = WiFi.softAP(HardwareConfig::ACCESS_POINT_NAME, nullptr, 1, false, 4);
   configureWebServer();
-  Serial.printf("Connect to Wi-Fi '%s' and open http://%s\n",
-    HardwareConfig::ACCESS_POINT_NAME, WiFi.softAPIP().toString().c_str());
+  Serial.printf("Wi-Fi AP start: %s; SSID='%s'; channel=1; IP=http://%s\n",
+    accessPointStarted ? "SUCCESS" : "FAILED",
+    HardwareConfig::ACCESS_POINT_NAME,
+    WiFi.softAPIP().toString().c_str());
 }
 
 void loop() {
   server.handleClient();
+  updateWifiDiagnostics();
+  updateServoSequence();
   updatePencilSensors();
   updateRfid();
   updateSession();

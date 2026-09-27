@@ -4,11 +4,33 @@ namespace HardwareConfig {
 // Keep false until the unloaded servo calibration in HARDWARE_TRAINING.md is complete.
 constexpr bool SERVO_ENABLED = false;
 constexpr bool SERVO_CALIBRATION_MODE = false;
+// One-shot bench test: sweep 90 -> 0 -> 90 three times, then detach.
+// Never enable while the servo is mechanically constrained.
+constexpr bool SERVO_CYCLE_TEST_MODE = false;
+constexpr int SERVO_CYCLE_ORIGINAL_ANGLE = 90;
+constexpr int SERVO_CYCLE_CCW_ANGLE = 0;
+constexpr unsigned int SERVO_CYCLE_REPETITIONS = 3;
+constexpr unsigned int SERVO_CYCLE_STEP_DELAY_MS = 15;
+constexpr unsigned int SERVO_CYCLE_HOLD_MS = 500;
+// Direct-position test using the team's physical labels:
+// physical 270 -> 180 -> 270 maps to servo commands 90 -> 0 -> 90.
+constexpr bool SERVO_SWIFT_TEST_MODE = false;
+constexpr int SERVO_SWIFT_270_COMMAND = 90;
+constexpr int SERVO_SWIFT_180_COMMAND = 0;
+constexpr unsigned int SERVO_SWIFT_HOLD_MS = 700;
 constexpr int SERVO_CALIBRATION_START_ANGLE = 90;
 constexpr int SERVO_UNLOCK_ANGLE = 30; // Placeholder: replace after calibration.
 constexpr int SERVO_LOCK_ANGLE = 90;   // Placeholder: replace after calibration.
 constexpr int SERVO_MIN_PULSE_US = 500;
 constexpr int SERVO_MAX_PULSE_US = 2400;
+
+// Local-network calibration page. Disable this before deployment if desired.
+constexpr bool DEVELOPER_TOOLS_ENABLED = true;
+constexpr int SERVO_WEB_MIN_ANGLE = 0;
+constexpr int SERVO_WEB_MAX_ANGLE = 180;
+constexpr unsigned int SERVO_WEB_MAX_REPETITIONS = 10;
+constexpr unsigned int SERVO_WEB_MIN_HOLD_MS = 100;
+constexpr unsigned int SERVO_WEB_MAX_HOLD_MS = 5000;
 
 // The claws are fixed. Each sensor measures whether the pencil is resting above it.
 // Replace these placeholder thresholds using the training readings.

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#15231b">
+  <title>Focus Lock Servo Setup</title>
+  <link rel="stylesheet" href="./src/styles.css">
+  <link rel="stylesheet" href="./src/servo-test.css">
+</head>
+<body>
+  <div class="sky" aria-hidden="true"><span class="sun"></span><span class="cloud cloud-one"></span><span class="cloud cloud-two"></span></div>
+  <div class="ocean" aria-hidden="true"><div class="wave wave-back"></div><div class="wave wave-front"></div></div>
+  <main class="timer-shell servo-shell">
+    <header>
+      <a class="back-link" href="./">← Timer</a>
+      <span class="page-title">Servo setup</span>
+      <span id="connection" class="connection offline"><i></i> Offline</span>
+    </header>
+    <section class="timer servo-panel">
+      <h1>Lock servo control</h1>
+      <p class="warning">Keep fingers and the mechanism clear. Use Detach immediately if the servo pushes against a hard stop.</p>
+
+      <section class="control-card" aria-labelledby="position-title">
+        <div class="card-heading">
+          <div><h2 id="position-title">Direct position</h2><p>SG90 command range: 0–180°</p></div>
+          <output id="angle-output">90°</output>
+        </div>
+        <input id="angle-range" class="angle-range" type="range" min="0" max="180" value="90">
+        <div class="position-row">
+          <label for="angle-number">Angle</label>
+          <input id="angle-number" type="number" min="0" max="180" value="90">
+          <button id="move-servo" type="button">Move</button>
+        </div>
+        <div class="preset-row" aria-label="Angle presets">
+          <button type="button" data-angle="0">0°</button>
+          <button type="button" data-angle="30">30°</button>
+          <button type="button" data-angle="90">90°</button>
+          <button type="button" data-angle="180">180°</button>
+        </div>
+        <div class="save-row">
+          <button id="save-unlock" type="button">Save as unlocked</button>
+          <button id="save-lock" type="button">Save as locked</button>
+        </div>
+        <p id="saved-angles" class="saved-angles">Saved: unlocked 30°, locked 90°</p>
+      </section>
+
+      <section class="control-card" aria-labelledby="sequence-title">
+        <div class="card-heading"><div><h2 id="sequence-title">Position sequence</h2><p>Your physical 270→180→270 maps to commands 90→0→90.</p></div></div>
+        <div class="sequence-grid">
+          <label for="outer-angle">Start/end<input id="outer-angle" type="number" min="0" max="180" value="90"></label>
+          <label for="inner-angle">Middle<input id="inner-angle" type="number" min="0" max="180" value="0"></label>
+          <label for="repetitions">Repeats<input id="repetitions" type="number" min="1" max="10" value="1"></label>
+          <label for="hold-ms">Hold (ms)<input id="hold-ms" type="number" min="100" max="5000" step="100" value="700"></label>
+        </div>
+        <button id="run-sequence" class="run-button" type="button">Run sequence</button>
+      </section>
+
+      <button id="detach-servo" class="detach-button" type="button">Stop and detach servo</button>
+      <p id="servo-status" class="servo-status" role="status" aria-live="polite">Connecting to controller…</p>
+    </section>
+  </main>
+  <script type="module" src="./src/servo-test.js"></script>
+</body>
+</html>

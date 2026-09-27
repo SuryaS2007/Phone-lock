@@ -35,6 +35,8 @@ Servo features, shake motion, and buzzer output are disabled by default until th
 
 ## Website
 
+While connected to the ESP32 `Focus-Lock` access point, open `/servo-test.html` for the development-only lock-servo calibration controls. The page supports direct position commands, repeated sequences, emergency detach, and persistent lock/unlock angle settings.
+
 The beach-themed site is served by the ESP32 at `http://192.168.4.1` on its open `Focus-Lock` Wi-Fi network. It displays the timer and state, shows the last scanned shell UID, edits that shell's duration, provides short developer demos, and plays a user-selected local music file.
 
 ## Main API
