@@ -24,6 +24,26 @@
   margin-bottom: 14px;
 }
 
+.shell-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.shell-picker button {
+  padding: 13px;
+  border: 2px solid #bcd9d9;
+  color: var(--deep);
+  background: #f4fbf9;
+}
+
+.shell-picker button.active {
+  border-color: var(--coral);
+  color: white;
+  background: var(--coral);
+}
+
 .shell-uid-wrap input {
   width: 100%;
   padding: 13px 15px;

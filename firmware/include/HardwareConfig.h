@@ -42,6 +42,13 @@ constexpr unsigned int SENSOR_TIMEOUT_MS = 100;
 constexpr unsigned int SENSOR_PERIOD_MS = 50;
 constexpr bool SENSOR_DIAGNOSTICS = true;
 
+// Demo fallback: RFID is bypassed and the two shells are selected on the website.
+constexpr bool RFID_ENABLED = false;
+constexpr char MANUAL_SHELL_1_UID[] = "SHELL1";
+constexpr char MANUAL_SHELL_2_UID[] = "SHELL2";
+constexpr unsigned long MANUAL_SHELL_1_DEFAULT_SECONDS = 15UL * 60UL;
+constexpr unsigned long MANUAL_SHELL_2_DEFAULT_SECONDS = 30UL * 60UL;
+
 constexpr char ACCESS_POINT_NAME[] = "Focus-Lock";
 constexpr unsigned long MAX_SESSION_SECONDS = 8UL * 60UL * 60UL;
 constexpr unsigned long DEFAULT_SHELL_SECONDS = 25UL * 60UL;
@@ -56,6 +63,7 @@ constexpr unsigned char LCD1602_ADDRESS = 0x27;
 
 // Assumes a passive buzzer. Set false until the buzzer type and wiring are verified.
 constexpr bool BUZZER_ENABLED = false;
+constexpr bool BUZZER_TEST_MODE = false;
 constexpr unsigned char BUZZER_PWM_CHANNEL = 7;
 
 // The second SG90 sways the crab only while actively studying.

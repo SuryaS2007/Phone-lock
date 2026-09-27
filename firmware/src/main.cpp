@@ -94,6 +94,8 @@ String selectedShellUid;
 uint32_t selectedDurationSeconds = HardwareConfig::DEFAULT_SHELL_SECONDS;
 
 bool sensorsReady = false;
+bool leftSensorReady = false;
+bool rightSensorReady = false;
 bool rfidReady = false;
 bool filesystemReady = false;
 bool lockServoAttached = false;
@@ -127,6 +129,8 @@ bool pencilSeenAfterShellScan = false;
 unsigned long pendingPencilChangeAt = 0;
 unsigned long lastSensorReadAt = 0;
 unsigned long lastDiagnosticAt = 0;
+unsigned long lastRfidPollAt = 0;
+unsigned long lastRfidDiagnosticAt = 0;
 unsigned long lastDisplayUpdateAt = 0;
 unsigned long lastShakeAt = 0;
 bool shakeDirection = false;
@@ -161,7 +165,7 @@ uint32_t remainingSeconds() {
 }
 
 void playTone(uint16_t frequency, uint16_t durationMs) {
-  if (!HardwareConfig::BUZZER_ENABLED) return;
+  if (!HardwareConfig::BUZZER_ENABLED && !HardwareConfig::BUZZER_TEST_MODE) return;
   ledcWriteTone(HardwareConfig::BUZZER_PWM_CHANNEL, frequency);
   delay(durationMs);
   ledcWriteTone(HardwareConfig::BUZZER_PWM_CHANNEL, 0);
@@ -238,23 +242,39 @@ bool initializeSensors() {
 
   digitalWrite(Pins::LEFT_PENCIL_XSHUT, HIGH);
   delay(20);
-  if (!leftPencilSensor.init()) {
+  leftSensorReady = leftPencilSensor.init();
+  if (!leftSensorReady) {
     Serial.println("ERROR: Left pencil VL53L0X was not found.");
-    return false;
+  } else {
+    leftPencilSensor.setAddress(I2cAddresses::LEFT_PENCIL);
+    leftPencilSensor.setTimeout(HardwareConfig::SENSOR_TIMEOUT_MS);
   }
-  leftPencilSensor.setAddress(I2cAddresses::LEFT_PENCIL);
-  leftPencilSensor.setTimeout(HardwareConfig::SENSOR_TIMEOUT_MS);
 
   digitalWrite(Pins::RIGHT_PENCIL_XSHUT, HIGH);
   delay(20);
-  if (!rightPencilSensor.init()) {
+  rightSensorReady = rightPencilSensor.init();
+  if (!rightSensorReady) {
     Serial.println("ERROR: Right pencil VL53L0X was not found.");
+  } else {
+    rightPencilSensor.setAddress(I2cAddresses::RIGHT_PENCIL);
+    rightPencilSensor.setTimeout(HardwareConfig::SENSOR_TIMEOUT_MS);
+  }
+
+  if (leftSensorReady) leftPencilSensor.startContinuous(HardwareConfig::SENSOR_PERIOD_MS);
+  if (rightSensorReady) rightPencilSensor.startContinuous(HardwareConfig::SENSOR_PERIOD_MS);
+
+  if (!leftSensorReady && !rightSensorReady) {
+    Serial.println("ERROR: No pencil VL53L0X sensors were detected.");
     return false;
   }
-  rightPencilSensor.setAddress(I2cAddresses::RIGHT_PENCIL);
-  rightPencilSensor.setTimeout(HardwareConfig::SENSOR_TIMEOUT_MS);
-  leftPencilSensor.startContinuous(HardwareConfig::SENSOR_PERIOD_MS);
-  rightPencilSensor.startContinuous(HardwareConfig::SENSOR_PERIOD_MS);
+
+  if (!leftSensorReady || !rightSensorReady) {
+    if (leftSensorReady) Serial.println("Detected only the LEFT pencil sensor through GPIO32 XSHUT.");
+    if (rightSensorReady) Serial.println("Detected only the RIGHT pencil sensor through GPIO33 XSHUT.");
+    Serial.println("DEMO MODE: The connected sensor will control pencil detection.");
+    return true;
+  }
+
   Serial.println("Both pencil sensors initialized at 0x30 and 0x31.");
   return true;
 }
@@ -268,14 +288,25 @@ void updatePencilSensors() {
   if (!sensorsReady || now - lastSensorReadAt < HardwareConfig::SENSOR_PERIOD_MS) return;
   lastSensorReadAt = now;
 
-  leftDistanceMm = leftPencilSensor.readRangeContinuousMillimeters();
-  leftReadingValid = !leftPencilSensor.timeoutOccurred() && leftDistanceMm < 8190;
-  rightDistanceMm = rightPencilSensor.readRangeContinuousMillimeters();
-  rightReadingValid = !rightPencilSensor.timeoutOccurred() && rightDistanceMm < 8190;
+  if (leftSensorReady) {
+    leftDistanceMm = leftPencilSensor.readRangeContinuousMillimeters();
+    leftReadingValid = !leftPencilSensor.timeoutOccurred() && leftDistanceMm < 8190;
+  }
+  if (rightSensorReady) {
+    rightDistanceMm = rightPencilSensor.readRangeContinuousMillimeters();
+    rightReadingValid = !rightPencilSensor.timeoutOccurred() && rightDistanceMm < 8190;
+  }
 
-  if (leftReadingValid && rightReadingValid) {
-    const bool leftPresent = readingMeansPencilPresent(leftDistanceMm, HardwareConfig::LEFT_PENCIL_THRESHOLD_MM);
-    const bool rightPresent = readingMeansPencilPresent(rightDistanceMm, HardwareConfig::RIGHT_PENCIL_THRESHOLD_MM);
+  const bool connectedReadingsValid =
+    (leftSensorReady || rightSensorReady) &&
+    (!leftSensorReady || leftReadingValid) &&
+    (!rightSensorReady || rightReadingValid);
+
+  if (connectedReadingsValid) {
+    const bool leftPresent = leftSensorReady && leftReadingValid &&
+      readingMeansPencilPresent(leftDistanceMm, HardwareConfig::LEFT_PENCIL_THRESHOLD_MM);
+    const bool rightPresent = rightSensorReady && rightReadingValid &&
+      readingMeansPencilPresent(rightDistanceMm, HardwareConfig::RIGHT_PENCIL_THRESHOLD_MM);
     const bool rawRemoved = !leftPresent && !rightPresent;
 
     if (rawRemoved != pendingPencilRemoved) {
@@ -343,7 +374,10 @@ bool setShellDuration(String uid, uint32_t durationSeconds) {
 uint32_t durationForShell(const String &uid, bool &configured) {
   const int index = findShell(uid);
   configured = index >= 0;
-  return configured ? shells[index].durationSeconds : HardwareConfig::DEFAULT_SHELL_SECONDS;
+  if (configured) return shells[index].durationSeconds;
+  if (uid == HardwareConfig::MANUAL_SHELL_1_UID) return HardwareConfig::MANUAL_SHELL_1_DEFAULT_SECONDS;
+  if (uid == HardwareConfig::MANUAL_SHELL_2_UID) return HardwareConfig::MANUAL_SHELL_2_DEFAULT_SECONDS;
+  return HardwareConfig::DEFAULT_SHELL_SECONDS;
 }
 
 String readUid() {
@@ -370,11 +404,56 @@ void selectShell(const String &uid) {
 }
 
 void updateRfid() {
-  if (!rfidReady || sessionActive) return;
-  if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial()) return;
-  selectShell(readUid());
+  if (!HardwareConfig::RFID_ENABLED || !rfidReady || sessionActive) return;
+  const unsigned long now = millis();
+  if (now - lastRfidPollAt < 250) return;
+  lastRfidPollAt = now;
+
+  byte atqa[2];
+  byte atqaSize = sizeof(atqa);
+  const MFRC522::StatusCode wakeStatus = rfid.PICC_WakeupA(atqa, &atqaSize);
+  if (wakeStatus != MFRC522::STATUS_OK && wakeStatus != MFRC522::STATUS_COLLISION) {
+    if (now - lastRfidDiagnosticAt >= 1000) {
+      lastRfidDiagnosticAt = now;
+      Serial.printf("RFID_SCAN: waiting (%s)\n", rfid.GetStatusCodeName(wakeStatus));
+    }
+    return;
+  }
+  if (!rfid.PICC_ReadCardSerial()) return;
+
+  const String uid = readUid();
+  if (uid != selectedShellUid) selectShell(uid);
   rfid.PICC_HaltA();
   rfid.PCD_StopCrypto1();
+}
+
+void runRfidSpiDiagnostics() {
+  Serial.print("RFID_SPI version_reads=");
+  for (byte index = 0; index < 8; ++index) {
+    if (index) Serial.print(',');
+    Serial.printf("%02X", rfid.PCD_ReadRegister(MFRC522::VersionReg));
+    delay(2);
+  }
+  Serial.println();
+
+  rfid.PCD_SetAntennaGain(rfid.RxGain_min);
+  const byte minimumGainReadback = rfid.PCD_GetAntennaGain();
+  rfid.PCD_SetAntennaGain(rfid.RxGain_max);
+  const byte maximumGainReadback = rfid.PCD_GetAntennaGain();
+  const byte txControl = rfid.PCD_ReadRegister(MFRC522::TxControlReg);
+
+  const bool registerRoundTripPassed =
+    minimumGainReadback == rfid.RxGain_min &&
+    maximumGainReadback == rfid.RxGain_max;
+  const bool antennaDriversEnabled = (txControl & 0x03) == 0x03;
+
+  Serial.printf(
+    "RFID_SPI gain_write_00_read_%02X gain_write_70_read_%02X round_trip=%s tx_control=%02X antenna_bits=%s self_test=NOT_RUN\n",
+    minimumGainReadback,
+    maximumGainReadback,
+    registerRoundTripPassed ? "PASS" : "FAIL",
+    txControl,
+    antennaDriversEnabled ? "ON" : "OFF");
 }
 
 void beginSession() {
@@ -684,6 +763,25 @@ void handleShellSave() {
   sendStatus();
 }
 
+bool isManualShell(const String &uid) {
+  return uid == HardwareConfig::MANUAL_SHELL_1_UID || uid == HardwareConfig::MANUAL_SHELL_2_UID;
+}
+
+void handleShellSelect() {
+  JsonDocument document;
+  const DeserializationError error = deserializeJson(document, server.arg("plain"));
+  String uid = document["uid"] | "";
+  uid.trim();
+  uid.toUpperCase();
+  if (error || !isManualShell(uid) || sessionActive) {
+    addCorsHeaders();
+    server.send(400, "text/plain", "Select SHELL1 or SHELL2 while no session is active");
+    return;
+  }
+  selectShell(uid);
+  sendStatus();
+}
+
 void handleShellList() {
   JsonDocument document;
   JsonArray array = document["shells"].to<JsonArray>();
@@ -750,6 +848,7 @@ void configureWebServer() {
   server.on("/status", HTTP_GET, []() { logHttpRequest(); sendStatus(); });
   server.on("/shells", HTTP_GET, handleShellList);
   server.on("/shell", HTTP_POST, handleShellSave);
+  server.on("/shell/select", HTTP_POST, handleShellSelect);
   server.on("/start", HTTP_POST, handleDeveloperStart);
   server.on("/reset", HTTP_POST, handleReset);
   server.on("/servo/status", HTTP_GET, []() { logHttpRequest(); sendServoStatus(); });
@@ -759,6 +858,7 @@ void configureWebServer() {
   server.on("/servo/save", HTTP_POST, handleServoSave);
   server.on("/start", HTTP_OPTIONS, []() { addCorsHeaders(); server.send(204); });
   server.on("/shell", HTTP_OPTIONS, []() { addCorsHeaders(); server.send(204); });
+  server.on("/shell/select", HTTP_OPTIONS, []() { addCorsHeaders(); server.send(204); });
   server.on("/servo/move", HTTP_OPTIONS, []() { addCorsHeaders(); server.send(204); });
   server.on("/servo/sequence", HTTP_OPTIONS, []() { addCorsHeaders(); server.send(204); });
   server.on("/servo/detach", HTTP_OPTIONS, []() { addCorsHeaders(); server.send(204); });
@@ -869,20 +969,27 @@ void setup() {
     stopShake();
   }
 
-  if (HardwareConfig::BUZZER_ENABLED) {
+  if (HardwareConfig::BUZZER_ENABLED || HardwareConfig::BUZZER_TEST_MODE) {
     ledcSetup(HardwareConfig::BUZZER_PWM_CHANNEL, 2000, 8);
     ledcAttachPin(Pins::BUZZER, HardwareConfig::BUZZER_PWM_CHANNEL);
+    if (HardwareConfig::BUZZER_TEST_MODE) playTone(880, 250);
   }
 
   Wire.begin(Pins::I2C_SDA, Pins::I2C_SCL);
   sensorsReady = initializeSensors();
   setupDisplays();
 
-  SPI.begin(Pins::RFID_SCK, Pins::RFID_MISO, Pins::RFID_MOSI, Pins::RFID_CS);
-  rfid.PCD_Init();
-  const byte rfidVersion = rfid.PCD_ReadRegister(MFRC522::VersionReg);
-  rfidReady = rfidVersion != 0x00 && rfidVersion != 0xFF;
-  Serial.printf("RC522: %s (version 0x%02X)\n", rfidReady ? "ready" : "not found", rfidVersion);
+  if (HardwareConfig::RFID_ENABLED) {
+    SPI.begin(Pins::RFID_SCK, Pins::RFID_MISO, Pins::RFID_MOSI, Pins::RFID_CS);
+    rfid.PCD_Init();
+    runRfidSpiDiagnostics();
+    const byte rfidVersion = rfid.PCD_ReadRegister(MFRC522::VersionReg);
+    rfidReady = rfidVersion != 0x00 && rfidVersion != 0xFF;
+    Serial.printf("RC522: %s (version 0x%02X)\n", rfidReady ? "ready" : "not found", rfidVersion);
+  } else {
+    rfidReady = false;
+    Serial.println("RFID bypassed: select Shell 1 or Shell 2 from the website.");
+  }
 
   loadShells();
   filesystemReady = LittleFS.begin(true);

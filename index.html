@@ -18,11 +18,13 @@
       <div class="progress" role="progressbar" aria-label="Study progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="progress-fill"></span></div>
       <p id="status" class="status">Connecting to controller…</p>
       <form id="shell-form">
-        <label for="shell-uid">Scanned shell</label>
-        <div class="shell-uid-wrap"><input id="shell-uid" type="text" placeholder="Scan an RFID shell" readonly></div>
+        <label>Choose a shell</label>
+        <div class="shell-picker" role="group" aria-label="Shell selection"><button type="button" data-shell-uid="SHELL1">Shell 1</button><button type="button" data-shell-uid="SHELL2">Shell 2</button></div>
+        <label for="shell-uid">Selected shell</label>
+        <div class="shell-uid-wrap"><input id="shell-uid" type="text" placeholder="Choose Shell 1 or Shell 2" readonly></div>
         <label for="shell-duration">Time assigned to this shell</label>
         <div class="controls"><div class="input-wrap"><input id="shell-duration" type="number" min="1" max="480" value="25" required><span>minutes</span></div><button id="save-shell" type="submit" disabled>Save shell</button></div>
-        <p class="shell-help">Scan a shell, save its time, rest the pencil on the claws, then lift it to lock and begin.</p>
+        <p class="shell-help">Choose a shell, adjust and save its time, rest the pencil on the claw, then lift it to begin.</p>
         <div class="quick-demo"><span>Quick demo:</span><button type="button" data-demo-seconds="10" disabled>10 sec</button><button type="button" data-demo-seconds="20" disabled>20 sec</button><button type="button" data-demo-seconds="30" disabled>30 sec</button></div>
       </form>
       <p id="message" class="message" role="status" aria-live="polite"></p>

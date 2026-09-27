@@ -12,6 +12,7 @@ const elements = {
   uid: document.querySelector("#shell-uid"),
   duration: document.querySelector("#shell-duration"),
   save: document.querySelector("#save-shell"),
+  shellButtons: [...document.querySelectorAll("[data-shell-uid]")],
   message: document.querySelector("#message"),
   musicFile: document.querySelector("#music-file"),
   musicToggle: document.querySelector("#music-toggle"),
@@ -38,7 +39,7 @@ function formatTime(seconds) {
 
 function labelFor(state) {
   return ({
-    WAITING_FOR_SHELL: "Scan an RFID shell",
+    WAITING_FOR_SHELL: "Choose Shell 1 or Shell 2",
     ARMED: "Shell loaded — lift pencil to begin",
     LOCKED_PAUSED: "Paused — pencil is resting",
     LOCKED_STUDYING: "Studying",
@@ -56,6 +57,7 @@ function setConnection(value) {
 
 function disableControls(disabled) {
   elements.save.disabled = disabled || !elements.uid.value;
+  elements.shellButtons.forEach((button) => { button.disabled = disabled; });
   elements.quickDemo.forEach((button) => { button.disabled = disabled; });
 }
 
@@ -78,12 +80,15 @@ function render(data) {
 
   const unavailable = requestPending || !connected || Boolean(data.sessionActive);
   elements.duration.disabled = unavailable || !uid;
-  elements.save.disabled = unavailable || !uid || data.rfidReady === false;
+  elements.save.disabled = unavailable || !uid;
+  elements.shellButtons.forEach((button) => {
+    button.disabled = unavailable;
+    button.classList.toggle("active", button.dataset.shellUid === uid);
+  });
   elements.quickDemo.forEach((button) => {
     button.disabled = unavailable || data.sensorsReady === false;
   });
   if (data.sensorsReady === false) elements.status.textContent = "Pencil sensors need setup";
-  else if (data.rfidReady === false) elements.status.textContent = "RFID reader needs setup";
 }
 
 async function refresh() {
@@ -115,6 +120,27 @@ elements.form.addEventListener("submit", async (event) => {
     requestPending = false;
     await refresh();
   }
+});
+
+async function selectManualShell(uid) {
+  if (requestPending) return;
+  requestPending = true;
+  disableControls(true);
+  const label = uid === "SHELL1" ? "Shell 1" : "Shell 2";
+  elements.message.textContent = `Selecting ${label}...`;
+  try {
+    render(await api.selectShell(uid));
+    elements.message.textContent = `${label} armed. Rest the pencil, then lift it to begin.`;
+  } catch (error) {
+    elements.message.textContent = error.message;
+  } finally {
+    requestPending = false;
+    await refresh();
+  }
+}
+
+elements.shellButtons.forEach((button) => {
+  button.addEventListener("click", () => selectManualShell(button.dataset.shellUid));
 });
 
 async function startDemo(duration) {

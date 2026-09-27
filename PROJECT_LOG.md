@@ -98,6 +98,19 @@ Recorded on **2026-09-25**:
 
 ## Change Log
 
+### 2026-09-26 — Independent VL53L0X detection
+
+- Updated startup diagnostics to check both GPIO32 and GPIO33 XSHUT paths even when one sensor is missing.
+- The serial log now identifies whether only the left or only the right pencil sensor is connected.
+- Continuous pencil detection still requires both sensors.
+
+### 2026-09-26 — GPIO17 buzzer bench test
+
+- Added a guarded one-shot buzzer test mode.
+- Uploaded and executed a 250 ms, 880 Hz tone on GPIO17.
+- Disabled buzzer test mode afterward so it does not repeat on reset.
+- Physical sound confirmation is pending from the user.
+
 ### 2026-09-26 — Phone connection verified
 
 - Confirmed `http://192.168.4.1/status` works from a phone connected directly to `Focus-Lock`.
@@ -444,6 +457,147 @@ Create a Markdown file that stores everything done and all project changes.
 | 2026-09-25 | Use dependency-free browser modules and a Node static server. | Keeps setup, debugging, and handoff simple while providing clean modules and tests. |
 | 2026-09-25 | Treat `pencilPresent: true` as pencil put down. | A resting pencil covers the light sensor; picking it up means it is absent and active study begins. |
 | 2026-09-25 | Reset an active simulated session if the phone is removed. | Preserves the invariant that no detected phone means `IDLE`; real locked hardware should physically prevent this case. |
+
+### 2026-09-26 — Single-sensor pencil buzzer test
+
+**Request**
+
+Test the connected VL53L0X by sounding the buzzer when the pencil moves.
+
+**Changes**
+
+- Added a temporary `PENCIL_BUZZER_TEST_MODE` that accepts either connected sensor.
+- A valid object at 50 mm or closer produces a continuous 1000 Hz tone; the buzzer stops immediately when the object is farther away or the reading becomes invalid.
+- Preserved the normal two-sensor requirement outside the temporary test mode.
+
+**Files changed**
+
+- `firmware/include/HardwareConfig.h`
+- `firmware/src/main.cpp`
+
+**Verification**
+
+- The earlier threshold test compiled and uploaded successfully to the ESP32 on `COM4`; live readings confirmed the right sensor on GPIO33 was working.
+- The 50 mm proximity behavior compiled successfully and was uploaded to the ESP32 on `COM4`.
+
+**Known limitations / follow-up**
+
+- Disable `PENCIL_BUZZER_TEST_MODE` after this bench test before restoring normal session behavior.
+
+### 2026-09-26 — Remove proximity buzzer test and check RFID
+
+**Request**
+
+Remove the temporary continuous buzzer behavior and determine whether the RC522 can be detected.
+
+**Changes**
+
+- Removed the 50 mm proximity-buzzer configuration and runtime logic.
+- Restored the buzzer to the normal disabled state; start/end sounds remain available for later enablement.
+- Restored the normal requirement for both pencil sensors outside dedicated bench tests.
+
+**Verification**
+
+- Firmware compiled and uploaded successfully to the ESP32 on `COM4`.
+- Startup reported `RC522: ready (version 0x15)`, confirming the ESP32 can communicate with the RFID reader over SPI.
+- No tag UID appeared during the 15-second tag-reading window, so an individual RFID tag has not yet been confirmed.
+
+### 2026-09-26 — Stationary RFID tag polling
+
+**Request**
+
+Scan the tag mounted in Shell 1, save its UID, and identify it as `Shell 1`.
+
+**Changes**
+
+- Changed RFID polling to issue `PICC_WakeupA` every 250 ms so a tag already resting on the RC522 can be detected even if it is in the halted state.
+- Retained the one-tag-at-a-time behavior and avoided reselecting the same UID continuously.
+- Set the RC522 receiver to maximum gain and added one-second scan-status diagnostics after no UID was returned with Shell 1 present.
+
+**Verification**
+
+- The first upload attempt lost communication at 58% while using 921600 baud.
+- Reduced `upload_speed` to 115200; the retry and maximum-gain diagnostic firmware uploaded successfully.
+- The RC522 reports ready with version `0x15`, but Shell 1 returned `Timeout in communication` repeatedly, so no UID could be captured or labeled yet.
+- A second 15-second maximum-gain scan produced the same timeout; Shell 1 still has no captured UID.
+- After restarting, a 10-second empty-reader baseline reported RC522 version `0x15` and repeated `Timeout in communication`, which is the expected no-tag response.
+- With a tag then placed on the antenna, a 15-second scan produced the identical timeout response; the RC522 registered no RF response from that tag.
+- A subsequent retry produced one `Error in communication` followed by timeouts and no UID; this suggests a possible weak/partial RF response but not a successful tag read.
+- A clean 20-second scan with only the bare tag on the antenna produced continuous timeouts and no UID.
+- Another 20-second retry again produced only communication timeouts; no UID was detected.
+- One final 15-second retry produced only communication timeouts; RFID scanning remains unavailable.
+- A non-resetting serial-monitor retry also produced only timeouts, ruling out monitor-triggered ESP32 resets as the cause of the failed tag read.
+- Another filtered 15-second live scan returned 15 consecutive RFID communication timeouts and no UID.
+
+### 2026-09-27 — RC522 bidirectional SPI diagnostic
+
+**Request**
+
+Verify whether the ESP32 can send register data to the RC522 and receive register data back, without running the RC522 self-test.
+
+**Changes**
+
+- Added eight repeated version-register reads.
+- Added receiver-gain register round trips using `0x00` and `0x70`, restoring maximum 48 dB gain afterward.
+- Added a read of `TxControlReg` to verify that both antenna-driver enable bits are set.
+- The diagnostic explicitly reports `self_test=NOT_RUN`.
+
+**Verification**
+
+- Firmware compiled and uploaded successfully on `COM4` at 115200 baud.
+- Version register returned `0x15` consistently across all eight reads.
+- Gain register round-trip passed: write `0x00`/read `0x00`, then write `0x70`/read `0x70`.
+- `TxControlReg` read `0x83`; antenna enable bits were on.
+- Output explicitly confirmed `self_test=NOT_RUN`.
+- Tag wake-up still returned `STATUS_TIMEOUT`, so digital SPI works but the RF/tag path remains unsuccessful.
+- A separate 20-second test using the RFID card also returned continuous `STATUS_TIMEOUT` responses and no UID.
+- A 15-second test with the identified low-frequency card returned continuous timeouts, confirming it is not readable by the 13.56 MHz RC522.
+- Another card scan produced mostly timeouts plus two generic communication errors, but still no ATQA/UID and therefore no successful read.
+
+### 2026-09-27 — Minimal 1 MHz RC522 isolation test
+
+**Request**
+
+Run the strongest remaining RC522 diagnostic without performing the chip self-test.
+
+**Changes**
+
+- Added a separate `rfid-minimal` PlatformIO environment using 1 MHz SPI.
+- Added an RC522-only test program; Wi-Fi, I2C sensors, displays, servos, and buzzer are excluded.
+- The test reports eight version reads, bidirectional register round trips, antenna-driver bits, ATQA, status code, and UID.
+- The full Focus Lock firmware remains intact and can be restored after the temporary test.
+
+**Verification**
+
+- The minimal firmware compiled and uploaded successfully; flash use was 21.3%.
+- At 1 MHz, all eight version reads remained `0x15`.
+- Gain register round-trip passed (`0x00` and `0x70`), `TxControlReg` was `0x83`, antenna bits were on, and self-test was not run.
+- Eleven consecutive tag wake-up attempts returned status `3` (`STATUS_TIMEOUT`); no ATQA or UID was received.
+- The first full-firmware restoration build exposed a duplicate-source filter issue; `platformio.ini` was corrected so each environment compiles only its intended source.
+- The full Focus Lock firmware then compiled and was restored successfully to `COM4`.
+- A final 20-second scan with one isolated tag after the full firmware restoration returned 19 consecutive `STATUS_TIMEOUT` responses and no UID.
+
+### 2026-09-27 — Manual Shell 1/Shell 2 RFID bypass
+
+**Request**
+
+Hardcode a reliable demo flow that does not depend on the failed RC522 tag scan.
+
+**Changes**
+
+- Disabled RFID operation in demo mode.
+- Added manual `SHELL1` and `SHELL2` firmware identities with default durations of 15 and 30 minutes.
+- Added `/shell/select` so the website can arm either shell while retaining per-shell saved durations.
+- Added Shell 1 and Shell 2 website buttons and removed RFID readiness as a UI requirement.
+- Updated pencil sensing so the single connected VL53L0X can run the demo; two sensors remain supported automatically.
+- Preserved servo safe mode until the physical lock/unlock angles are finalized.
+
+**Verification**
+
+- Browser JavaScript syntax checks passed.
+- All five Node tests passed.
+- ESP32 firmware compiled successfully (RAM 14.2%, flash 68.3%).
+- Upload is pending because the ESP32 USB serial device disappeared; only the laptop's COM3 port is currently visible.
 
 ## Pending Work
 
